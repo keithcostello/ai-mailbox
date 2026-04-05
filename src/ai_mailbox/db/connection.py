@@ -4,8 +4,11 @@ Wraps both connection types behind a common interface so tool code
 doesn't need to know which database is in use.
 """
 
+import logging
 import sqlite3
 from typing import Protocol, Any
+
+logger = logging.getLogger(__name__)
 
 
 class DBConnection(Protocol):
@@ -39,27 +42,57 @@ class SQLiteDB:
 
 
 class PostgresDB:
-    """PostgreSQL wrapper implementing DBConnection. Uses psycopg."""
+    """PostgreSQL wrapper with auto-reconnect."""
 
     def __init__(self, database_url: str):
+        self._database_url = database_url
+        self._conn = None
+        self._connect()
+
+    def _connect(self):
         import psycopg
         from psycopg.rows import dict_row
-        self._conn = psycopg.connect(database_url, row_factory=dict_row, autocommit=True)
+        self._conn = psycopg.connect(
+            self._database_url, row_factory=dict_row, autocommit=True
+        )
+
+    def _ensure_conn(self):
+        """Reconnect if connection is closed."""
+        if self._conn is None or self._conn.closed:
+            logger.info("PostgreSQL connection lost, reconnecting...")
+            self._connect()
 
     def execute(self, sql: str, params: tuple = ()) -> Any:
-        # Convert ? placeholders to %s for psycopg
         sql = sql.replace("?", "%s")
-        return self._conn.execute(sql, params)
+        self._ensure_conn()
+        try:
+            return self._conn.execute(sql, params)
+        except Exception:
+            self._connect()
+            return self._conn.execute(sql, params)
 
     def fetchone(self, sql: str, params: tuple = ()) -> dict | None:
         sql = sql.replace("?", "%s")
-        cur = self._conn.execute(sql, params)
-        return cur.fetchone()
+        self._ensure_conn()
+        try:
+            cur = self._conn.execute(sql, params)
+            return cur.fetchone()
+        except Exception:
+            self._connect()
+            cur = self._conn.execute(sql, params)
+            return cur.fetchone()
 
     def fetchall(self, sql: str, params: tuple = ()) -> list[dict]:
         sql = sql.replace("?", "%s")
-        cur = self._conn.execute(sql, params)
-        return cur.fetchall()
+        self._ensure_conn()
+        try:
+            cur = self._conn.execute(sql, params)
+            return cur.fetchall()
+        except Exception:
+            self._connect()
+            cur = self._conn.execute(sql, params)
+            return cur.fetchall()
 
     def commit(self) -> None:
-        self._conn.commit()
+        if self._conn and not self._conn.closed:
+            self._conn.commit()
