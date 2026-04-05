@@ -1,0 +1,29 @@
+ID,Deliverable,Module,Status,Tests,Gate,Notes
+D01,Scaffold repo structure + pyproject.toml,—,DONE,—,Builds clean,pip install -e works
+D02,config.py,config,DONE,—,Loads env vars,JWT secret + passwords
+D03,db/schema.py + migrations,db,DONE,—,Schema creates tables in SQLite+PG,001+002 migrations
+D04,db/connection.py — DB abstraction,db,DONE,—,SQLiteDB + PostgresDB wrappers,autocommit=True for PG
+D05,conftest.py — test fixtures,tests,DONE,—,SQLiteDB fixture + test users,
+D06,oauth.py — OAuth 2.1 provider,auth,DONE,test_oauth.py (8/8 green),All 8 green,TDD
+D07,auth token create/validate,auth,DONE,test_auth.py (3/3 green),All 3 green,JWT-based
+D08,db/queries.py,db,DONE,test_queries.py (8/8 green),All 8 green,TDD + PG boolean fix
+D09,tools/send.py,tools,DONE,test_tools.py Scenario A (3/3),Green,No api_key
+D10,tools/inbox.py,tools,DONE,test_tools.py Scenario C (4/4),Green,No api_key
+D11,tools/reply.py,tools,DONE,test_tools.py Scenario B (3/3),Green,No api_key
+D12,tools/thread.py,tools,DONE,test_tools.py Scenario D (1/1),Green,No api_key
+D13,tools/identity.py,tools,DONE,test_tools.py Scenario C.7 (1/1),Green,No api_key
+D14,Edge case handling,tools,DONE,test_tools.py Scenario E (7/7),All green,TDD
+D15,server.py — MCP + OAuth wiring,server,DONE,test_server.py (5/5 green),All green + full suite 42/42,TDD
+D16,__main__.py entry point,deploy,DONE,—,python -m ai_mailbox runs,
+D17,Dockerfile,deploy,DONE,—,python:3.11-slim,
+D18,railway.toml,deploy,DONE,—,Health check configured,
+D19,.env.example,deploy,DONE,—,JWT secret + passwords documented,
+D20,README.md — Amy install guide,docs,DONE,—,OAuth login flow documented,
+D21,Railway deployment v0.2.0,deploy,DONE,health=200 auth=oauth2.1,OAuth discovery works,ai-mailbox-server-production.up.railway.app
+D22,OAuth discovery endpoints,deploy,DONE,/.well-known/ returns metadata,S256 PKCE + DCR enabled,
+D23,MCP endpoint protection,deploy,DONE,/mcp returns 401 without token,OAuth enforced,
+D24,Login page,deploy,DONE,/login renders + POST returns 302,BUG-002 fixed (FLOAT expires_at),
+D25,Token exchange,deploy,DONE,/token returns JWT with PKCE,BUG-003 fixed (redirect_uri_provided_explicitly),
+D26,AI UAT — full OAuth flow via curl,uat,DONE,Register+Login+Token+MCP+whoami,All steps pass end-to-end,
+D27,Keith Claude Desktop — live connection,uat,DONE,check_messages returns user=keith,OAuth login + tool call verified,
+D28,Human UAT — Keith + Amy bidirectional,uat,DONE,Amy connected + received welcome msg,Bidirectional messaging verified,2026-04-05
