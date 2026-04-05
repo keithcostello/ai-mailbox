@@ -8,3 +8,14 @@ build/
 .pytest_cache/
 .env
 *.db
+
+# Claude Code workflow files (user-specific, not part of the app)
+.claude/
+CLAUDE.md
+AGENTS.md
+PROJECT_STATUS.md
+memory/
+
+# Private docs (from parent repo, not part of the app)
+private_docs/
+projects/
