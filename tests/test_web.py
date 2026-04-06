@@ -857,7 +857,7 @@ class TestAckBadges:
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
         assert "received" in resp.text
-        assert "bg-base-200" in resp.text
+        assert "text-info" in resp.text
 
     def test_processing_badge_in_thread(self, client, web_db):
         conv_id, _ = self._seed_with_ack(web_db, "processing")

@@ -5,7 +5,7 @@
      hx-target="#main-content"
      hx-push-url="true">
     <div class="flex items-center justify-between">
-        <div class="text-sm truncate flex-1 {{ 'font-medium text-base-content' if conv.unread_count > 0 else 'text-base-content/70' }}">
+        <div class="text-sm truncate flex-1 {{ 'font-bold text-base-content' if conv.unread_count > 0 else 'font-medium text-base-content/70' }}">
             {% set others = [] %}
             {% for p in conv.participants if p != user_id %}
                 {% if others.append(p) %}{% endif %}
@@ -16,7 +16,7 @@
             {% endif %}
         </div>
         {% if conv.unread_count > 0 %}
-        <span class="w-5 h-5 rounded-full bg-base-content text-base-100 text-xs flex items-center justify-center font-medium ml-2">{{ conv.unread_count }}</span>
+        <span class="w-5 h-5 rounded-full bg-primary text-primary-content text-xs flex items-center justify-center font-medium ml-2">{{ conv.unread_count }}</span>
         {% endif %}
     </div>
     <div class="flex items-center gap-1 mt-0.5">

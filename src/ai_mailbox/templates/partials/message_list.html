@@ -1,17 +1,22 @@
 {% for msg in messages %}
 <div class="flex gap-3 py-3 border-b border-base-200 last:border-b-0">
-    <div class="w-8 h-8 rounded bg-base-200 flex items-center justify-center text-xs font-medium text-base-content/50 shrink-0 mt-0.5">
+    <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0 mt-0.5">
         {{ msg.from_user[:2] | upper }}
     </div>
     <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 mb-0.5">
-            <span class="text-sm font-semibold">{{ msg.from_user }}</span>
+            <span class="text-sm font-bold text-base-content">{{ msg.from_user }}</span>
             {% if is_ai_user(msg.from_user) %}
             <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">Bot</span>
             {% endif %}
             <span class="text-xs text-base-content/30">{{ msg.created_at | relative_time }}</span>
             {% if msg.ack_state is defined and msg.ack_state and msg.ack_state != 'pending' %}
-            <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">{{ msg.ack_state }}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded
+                {% if msg.ack_state == 'received' %}bg-info/10 text-info
+                {% elif msg.ack_state == 'processing' %}bg-warning/10 text-warning
+                {% elif msg.ack_state == 'completed' %}bg-success/10 text-success
+                {% elif msg.ack_state == 'failed' %}bg-error/10 text-error
+                {% endif %}">{{ msg.ack_state }}</span>
             {% endif %}
         </div>
         {% if msg.content_type == 'application/json' %}
