@@ -1,6 +1,6 @@
 # Sprint 6 Spec: Self-Service Registration + Settings + Onboarding
 
-**Status:** APPROVED -- GitHub OAuth only (Google deferred)
+**Status:** COMPLETE -- implemented, deployed, UAT passed (81a281b)
 **Branch:** mvp-1-staging
 **Railway Environment:** MVP 1 Staging (ai-mailbox-server-mvp-1-staging.up.railway.app)
 **GitHub Issues:** #13 (version string mismatch), new issue for self-service registration

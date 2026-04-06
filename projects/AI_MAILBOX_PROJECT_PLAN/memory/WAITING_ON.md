@@ -1,17 +1,17 @@
 # AI_MAILBOX_PROJECT_PLAN
 
 **Status:** ACTIVE
-**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 5 complete + UI redesign, ready for Sprint 6
+**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 6 complete, ready for Sprint 7
 **Expected Branch:** mvp-1-staging
 **PR URL:**
 **Relevant Handoff:** projects/AI_MAILBOX_PROJECT_PLAN/docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md
 
 ## Next Steps
 
-- Write Sprint 6 spec (Google/GitHub OAuth, user settings page, invite-only mode, generic README)
-- Implement Sprint 6 via TDD (target 460+ tests)
+- Write Sprint 7 spec (webhooks, notifications, dead letter, system messages)
+- Implement Sprint 7 via TDD
+- Configure GitHub OAuth app and set env vars on Railway for live OAuth testing
 - Deploy and pass AI UX UAT + Human UAT
-- Close GitHub issue #13
 
 ## Pending Tasks
 
@@ -19,6 +19,7 @@
 - Resolve production dual-Postgres question (Postgres vs Postgres-bbLI, both at 0MB) [TD-003]
 - Staging DB has legacy columns (to_user, read, project on messages) -- migration 003 didn't drop them [TD-001]
 - Tailwind CDN in production -- acceptable for alpha, track for Sprint 6+ build step [TD-005]
+- GitHub OAuth not yet tested live (no GitHub OAuth app configured on Railway) [TD-006]
 
 ## Document Index (Required)
 
@@ -40,6 +41,7 @@
 | `docs/specs/SPRINT_3_SPEC.md` | complete | Claude | Sprint 3 spec, approved, implemented, deployed |
 | `docs/specs/SPRINT_4_SPEC.md` | complete | Claude | Sprint 4 spec, approved, implemented, deployed |
 | `docs/specs/SPRINT_5_SPEC.md` | complete | Claude | Sprint 5 spec, approved, implemented, deployed |
+| `docs/specs/SPRINT_6_SPEC.md` | complete | Claude | Sprint 6 spec, approved, implemented, deployed |
 | `docs/architecture/ARCHITECTURE_DEEP_DIVE.md` | complete | Claude | Codebase analysis, 16 issues filed |
 | `docs/reference/RAILWAY_ENVIRONMENTS.md` | complete | Claude | Environment documentation |
 | `docs/plans/SAAS_PRODUCT_ANALYSIS.md` | complete | Claude | Auth, registration, pricing, UI analysis |
@@ -47,7 +49,7 @@
 | `docs/plans/COMPETITIVE_LANDSCAPE.md` | complete | Claude | Protocols, frameworks, positioning |
 | `docs/plans/SPRINT_ROADMAP.md` | active | Claude | 8-sprint plan |
 | `docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 5 continuation prompt (used) |
-| `docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md` | current | Claude | Sprint 6 continuation prompt |
+| `docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 6 continuation prompt (used) |
 
 ## Recent Activity Log
 
@@ -57,4 +59,4 @@
 - 2026-04-06: Sprint 5 implemented (ACK, archiving, agent identity, tech debt). 424 tests. Issues #9-11 closed.
 - 2026-04-06: UI redesign: fantasy->corporate theme, chat bubbles->flat Slack-style, monochrome+accent design.
 - 2026-04-06: UI polish: bolder names, colored avatars, primary unread counts (f5801f1). Human UAT passed.
-- 2026-04-06: Sprint 6 scope confirmed: Google/GitHub OAuth, user settings page, invite-only mode, generic README.
+- 2026-04-06: Sprint 6 implemented (GitHub OAuth, settings page, invite mode, README, version fix). 461 tests. Issue #13 closed.
