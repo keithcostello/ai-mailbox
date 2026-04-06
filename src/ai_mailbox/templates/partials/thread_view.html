@@ -57,16 +57,16 @@
     </form>
 </div>
 
-{# Hidden trigger to refresh sidebar unread counts after viewing #}
-<div hx-get="/web/inbox/conversations"
-     hx-target="#conversation-list"
-     hx-trigger="load"
-     hx-swap="innerHTML"
-     style="display:none;"></div>
-
 <script>
-// Auto-scroll to bottom of message list
+// Refresh sidebar preserving current filter state + auto-scroll
 (function() {
+    var project = document.getElementById('project-filter');
+    var participant = document.getElementById('participant-filter');
+    var pVal = project ? project.value : '';
+    var partVal = participant ? participant.value : '';
+    var url = '/web/inbox/conversations?project=' + encodeURIComponent(pVal) + '&participant=' + encodeURIComponent(partVal);
+    htmx.ajax('GET', url, '#conversation-list');
+
     var el = document.getElementById('message-list');
     if (el) el.scrollTop = el.scrollHeight;
 })();

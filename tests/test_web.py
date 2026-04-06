@@ -597,3 +597,35 @@ class TestCompose:
         # Should show both messages (reused conversation)
         assert "Existing message" in resp.text
         assert "New message" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Filter dropdown clearability and sidebar refresh
+# ---------------------------------------------------------------------------
+
+class TestFilterDropdowns:
+    """Filter dropdowns must be clearable and sidebar refresh must preserve filters."""
+
+    def test_inbox_has_clear_filters_link(self, client):
+        """Inbox should have a clear-filters link and clearable dropdown init."""
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "clear-filters" in resp.text
+        assert "clearable" in resp.text
+
+    def test_thread_view_sidebar_refresh_reads_filters(self, client, web_db):
+        """Thread view should NOT hardcode a bare /web/inbox/conversations hx-get.
+
+        Instead it should use JS to read the current filter values from the dropdowns.
+        """
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "test msg")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        # Should NOT have a bare hx-get that drops filter params
+        assert 'hx-get="/web/inbox/conversations"' not in resp.text
+        # Should reference filter elements to preserve state
+        assert "project-filter" in resp.text

@@ -23,6 +23,7 @@
                     </select>
                 </div>
             </div>
+            <a href="#" id="clear-filters" style="display: block; text-align: center; font-size: 0.85em; color: #999; margin-top: 4px;">Clear filters</a>
         </div>
         <div class="ui divider" style="margin: 0;"></div>
         <div id="conversation-list"
@@ -44,7 +45,20 @@
 
 <script>
 $(function() {
-    $('.ui.dropdown').dropdown();
+    $('#project-filter, #participant-filter').closest('.ui.dropdown').dropdown({clearable: true});
+    $('.ui.dropdown').not('#project-filter, #participant-filter').not(
+        $('#project-filter, #participant-filter').closest('.ui.dropdown')
+    ).dropdown();
+
+    // Clear filters link resets both dropdowns
+    $('#clear-filters').on('click', function(e) {
+        e.preventDefault();
+        $('#project-filter').val('');
+        $('#project-filter').closest('.ui.dropdown').find('.text').text('All projects').addClass('default');
+        $('#participant-filter').val('');
+        $('#participant-filter').closest('.ui.dropdown').find('.text').text('All people').addClass('default');
+        htmx.ajax('GET', '/web/inbox/conversations', '#conversation-list');
+    });
 
     // Wire filter dropdowns to refresh conversation list
     $('#project-filter').on('change', function() {

@@ -34,7 +34,11 @@
     <script>
         // Re-initialize Semantic UI components after HTMX swaps
         document.body.addEventListener('htmx:afterSwap', function() {
-            $('.ui.dropdown').dropdown();
+            // Preserve clearable on filter dropdowns, plain init for others
+            $('#project-filter, #participant-filter').closest('.ui.dropdown').dropdown({clearable: true});
+            $('.ui.dropdown').not('#project-filter, #participant-filter').not(
+                $('#project-filter, #participant-filter').closest('.ui.dropdown')
+            ).dropdown();
         });
     </script>
 </body>
