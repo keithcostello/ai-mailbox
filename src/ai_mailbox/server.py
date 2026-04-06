@@ -173,7 +173,7 @@ def create_app() -> object:
         return uid
 
     @mcp.tool()
-    def send_message(
+    def mailbox_send_message(
         body: str,
         to: str | list[str] | None = None,
         project: str = "general",
@@ -184,7 +184,7 @@ def create_app() -> object:
         group_name: str | None = None,
         group_send_token: str | None = None,
     ) -> dict:
-        """Send a message. Use 'to' for direct (string) or group (list). Use 'conversation_id' for existing conversations. Group sends require a group_send_token from a confirmation step."""
+        """Send a message via AI Mailbox. Use 'to' for direct (string) or group (list). Use 'conversation_id' for existing conversations. Group sends require a group_send_token from a confirmation step."""
         uid = _get_user()
         logger.info(f"send_message: from={uid} to={to} conv={conversation_id} project={project}")
         return tool_send_message(
@@ -198,14 +198,14 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def list_messages(
+    def mailbox_list_messages(
         project: str = "",
         unread_only: bool = True,
         conversation_id: str | None = None,
         limit: int = 50,
         after_sequence: int = 0,
     ) -> dict:
-        """List messages without marking as read. Pure read operation with pagination."""
+        """List AI Mailbox messages without marking as read. Pure read operation with pagination."""
         uid = _get_user()
         logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
         return tool_list_messages(
@@ -216,8 +216,8 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def mark_read(conversation_id: str, up_to_sequence: int | None = None) -> dict:
-        """Mark messages as read up to a sequence number in a conversation."""
+    def mailbox_mark_read(conversation_id: str, up_to_sequence: int | None = None) -> dict:
+        """Mark AI Mailbox messages as read up to a sequence number in a conversation."""
         uid = _get_user()
         logger.info(f"mark_read: user={uid} conv={conversation_id} up_to={up_to_sequence}")
         return tool_mark_read(
@@ -227,12 +227,12 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def reply_to_message(
+    def mailbox_reply_to_message(
         message_id: str, body: str,
         content_type: str = "text/plain",
         idempotency_key: str | None = None,
     ) -> dict:
-        """Reply to a specific message. Inherits project and thread."""
+        """Reply to an AI Mailbox message. Inherits project and thread."""
         uid = _get_user()
         logger.info(f"reply_to_message: user={uid} message_id={message_id}")
         return tool_reply_to_message(
@@ -242,8 +242,8 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def get_thread(message_id: str, limit: int = 100, after_sequence: int = 0) -> dict:
-        """Get the full conversation thread from any message in it."""
+    def mailbox_get_thread(message_id: str, limit: int = 100, after_sequence: int = 0) -> dict:
+        """Get the full AI Mailbox conversation thread from any message in it."""
         uid = _get_user()
         logger.info(f"get_thread: user={uid} message_id={message_id}")
         return tool_get_thread(
@@ -252,22 +252,22 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def whoami() -> dict:
-        """Identity check. Returns your user info and unread counts per project."""
+    def mailbox_whoami() -> dict:
+        """AI Mailbox identity check. Returns your user info and unread counts per project."""
         uid = _get_user()
         logger.info(f"whoami: user={uid}")
         return tool_whoami(db, user_id=uid)
 
     @mcp.tool()
-    def list_users() -> dict:
-        """List all registered users (except yourself)."""
+    def mailbox_list_users() -> dict:
+        """List all registered AI Mailbox users (except yourself)."""
         uid = _get_user()
         logger.info(f"list_users: user={uid}")
         return tool_list_users(db, user_id=uid)
 
     @mcp.tool()
-    def create_group(name: str, members: list[str], project: str = "general") -> dict:
-        """Create a named group conversation."""
+    def mailbox_create_group(name: str, members: list[str], project: str = "general") -> dict:
+        """Create a named AI Mailbox group conversation."""
         uid = _get_user()
         logger.info(f"create_group: user={uid} name={name} members={members}")
         return tool_create_group(
@@ -275,8 +275,8 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def add_participant(conversation_id: str, user_to_add: str) -> dict:
-        """Add a user to a group conversation. Cannot add to direct conversations."""
+    def mailbox_add_participant(conversation_id: str, user_to_add: str) -> dict:
+        """Add a user to an AI Mailbox group conversation. Cannot add to direct conversations."""
         uid = _get_user()
         logger.info(f"add_participant: user={uid} conv={conversation_id} adding={user_to_add}")
         return tool_add_participant(
@@ -286,7 +286,7 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def search_messages(
+    def mailbox_search_messages(
         query: str,
         project: str | None = None,
         from_user: str | None = None,
@@ -294,7 +294,7 @@ def create_app() -> object:
         until: str | None = None,
         limit: int = 20,
     ) -> dict:
-        """Search messages across all your conversations. Returns matching messages ordered by relevance."""
+        """Search AI Mailbox messages across all your conversations. Returns matching messages ordered by relevance."""
         uid = _get_user()
         logger.info(f"search_messages: user={uid} query={query!r}")
         return tool_search_messages(
@@ -304,15 +304,15 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def acknowledge(message_id: str, state: str) -> dict:
-        """Acknowledge a message. States: received, processing, completed, failed. Forward-only transitions."""
+    def mailbox_acknowledge(message_id: str, state: str) -> dict:
+        """Acknowledge an AI Mailbox message. States: received, processing, completed, failed. Forward-only transitions."""
         uid = _get_user()
         logger.info(f"acknowledge: user={uid} message_id={message_id} state={state}")
         return tool_acknowledge(db, user_id=uid, message_id=message_id, state=state)
 
     @mcp.tool()
-    def archive_conversation(conversation_id: str, archive: bool = True) -> dict:
-        """Archive or unarchive a conversation. Archive=True to archive, False to unarchive."""
+    def mailbox_archive_conversation(conversation_id: str, archive: bool = True) -> dict:
+        """Archive or unarchive an AI Mailbox conversation. Archive=True to archive, False to unarchive."""
         uid = _get_user()
         logger.info(f"archive_conversation: user={uid} conv={conversation_id} archive={archive}")
         return tool_archive_conversation(
