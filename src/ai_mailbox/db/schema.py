@@ -15,6 +15,29 @@ _MIGRATION_DIR = Path(__file__).parent / "migrations"
 _PG_ONLY_MIGRATIONS = {"004_search.sql"}
 
 
+def _split_pg_statements(sql: str) -> list[str]:
+    """Split SQL respecting $$ dollar-quoted blocks (used in PL/pgSQL functions)."""
+    statements = []
+    current = []
+    in_dollar_quote = False
+    for line in sql.split("\n"):
+        # Track $$ blocks — toggle on each occurrence
+        count = line.count("$$")
+        if count % 2 == 1:
+            in_dollar_quote = not in_dollar_quote
+        current.append(line)
+        # Only split on ; when not inside a $$ block
+        if not in_dollar_quote and line.rstrip().endswith(";"):
+            statements.append("\n".join(current))
+            current = []
+    # Leftover (shouldn't happen with well-formed SQL)
+    if current:
+        remaining = "\n".join(current).strip()
+        if remaining:
+            statements.append(remaining)
+    return statements
+
+
 def get_migration_sql(*, exclude_pg_only: bool = False) -> str:
     """Read and concatenate all migration SQL files in order.
 
@@ -83,7 +106,7 @@ def ensure_schema_postgres(database_url: str) -> None:
             _time.sleep(2)
 
     logger.info("Running PostgreSQL schema migrations")
-    for statement in sql.split(";"):
+    for statement in _split_pg_statements(sql):
         statement = statement.strip()
         if not statement:
             continue
