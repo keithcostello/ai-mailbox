@@ -124,6 +124,13 @@ def create_oauth_routes(
     # In-memory state store for CSRF protection
     _pending_states: dict[str, float] = {}  # state -> expiry timestamp
 
+    def _callback_url(request: Request) -> str:
+        """Build the OAuth callback URL, forcing HTTPS behind reverse proxies."""
+        url = str(request.url_for("oauth_callback"))
+        if url.startswith("http://") and "localhost" not in url:
+            url = "https://" + url[7:]
+        return url
+
     async def github_initiate(request: Request):
         """Redirect user to GitHub for authorization."""
         state = secrets.token_urlsafe(32)
@@ -131,7 +138,7 @@ def create_oauth_routes(
 
         params = {
             "client_id": config.github_client_id,
-            "redirect_uri": str(request.url_for("oauth_callback")),
+            "redirect_uri": _callback_url(request),
             "scope": "user:email read:user",
             "state": state,
         }
@@ -172,7 +179,7 @@ def create_oauth_routes(
                     "client_id": config.github_client_id,
                     "client_secret": config.github_client_secret,
                     "code": code,
-                    "redirect_uri": str(request.url_for("oauth_callback")),
+                    "redirect_uri": _callback_url(request),
                 },
                 headers={"Accept": "application/json"},
             )
