@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Choose Your Username - AI Mailbox{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center min-h-screen">
+    <div class="card w-96 bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h2 class="card-title justify-center text-2xl mb-1">Welcome, {{ name }}!</h2>
+            <p class="text-sm text-base-content/60 text-center mb-4">Pick a username. This is how other users and AI agents will message you.</p>
+            {% if error %}
+            <div class="alert alert-error text-sm">
+                <span>{{ error }}</span>
+            </div>
+            {% endif %}
+            <form method="POST" action="/web/oauth/pick-handle" class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Username</span></label>
+                    <div class="flex items-center gap-1">
+                        <span class="text-base-content/40 text-lg">@</span>
+                        <input type="text" name="handle" value="{{ suggested }}" class="input input-bordered w-full" maxlength="30" pattern="[a-z0-9_-]+" title="Lowercase letters, numbers, hyphens, underscores only" required autofocus>
+                    </div>
+                    <label class="label"><span class="label-text-alt text-base-content/40">Lowercase letters, numbers, hyphens, underscores. 2-30 characters.</span></label>
+                </div>
+                <input type="hidden" name="token" value="{{ token }}">
+                <button type="submit" class="btn btn-primary w-full">Continue</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

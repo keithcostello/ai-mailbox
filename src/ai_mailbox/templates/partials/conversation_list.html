@@ -1,0 +1,54 @@
+{% if conversations %}
+{% for conv in conversations %}
+<div class="px-2.5 py-2 hover:bg-base-200/50 cursor-pointer border-b border-base-200 transition-colors {{ 'bg-base-200/30' if conv.unread_count > 0 else '' }}"
+     hx-get="/web/conversation/{{ conv.conversation_id }}"
+     hx-target="#main-content"
+     hx-push-url="true">
+    <div class="flex items-center justify-between">
+        <div class="text-sm truncate flex-1 {{ 'font-bold text-base-content' if conv.unread_count > 0 else 'font-medium text-base-content/70' }}">
+            {% set others = [] %}
+            {% for p in conv.participants if p != user_id %}
+                {% if others.append(p) %}{% endif %}
+            {% endfor %}
+            {{ others[:3] | join(', ') }}
+            {% if others | length > 3 %}
+            <span class="text-base-content/30 font-normal"> +{{ others | length - 3 }}</span>
+            {% endif %}
+        </div>
+        {% if conv.unread_count > 0 %}
+        <span class="w-5 h-5 rounded-full bg-primary text-primary-content text-xs flex items-center justify-center font-medium ml-2">{{ conv.unread_count }}</span>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-1 mt-0.5">
+        {% if conv.project %}
+        <span class="text-xs text-base-content/40">{{ conv.project }}</span>
+        {% endif %}
+        {% if conv.type is defined and conv.type != 'direct' %}
+        <span class="text-xs text-base-content/30">- group</span>
+        {% endif %}
+        {% if conv.archived is defined and conv.archived %}
+        <span class="text-xs text-base-content/30">- archived</span>
+        {% endif %}
+    </div>
+    <div class="text-xs text-base-content/40 truncate mt-0.5">
+        {% if conv.last_message_from %}{{ conv.last_message_from }}: {% endif %}{{ conv.last_message_preview }}
+    </div>
+</div>
+{% endfor %}
+
+{% if has_more %}
+<div class="p-2.5 text-center">
+    <button class="btn btn-ghost btn-sm h-7 min-h-0 text-xs text-base-content/40"
+            hx-get="/web/inbox/conversations?page={{ page + 1 }}{% if project_filter %}&project={{ project_filter }}{% endif %}{% if participant_filter %}&participant={{ participant_filter }}{% endif %}"
+            hx-target="#conversation-list"
+            hx-swap="innerHTML">
+        Load more
+    </button>
+</div>
+{% endif %}
+
+{% else %}
+<div class="flex items-center justify-center h-32 text-base-content/30 text-xs">
+    No conversations found
+</div>
+{% endif %}

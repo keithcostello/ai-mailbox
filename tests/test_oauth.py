@@ -1,13 +1,43 @@
 """Test Suite: OAuth Provider — token and auth code management."""
 
+import json
 import time
 import pytest
 
 from ai_mailbox.oauth import (
     MailboxOAuthProvider,
+    _parse_scopes,
     hash_password,
     verify_password,
 )
+
+
+class TestParseScopes:
+    """Scopes normalization: JSON array and comma-separated backward compat."""
+
+    def test_json_array(self):
+        assert _parse_scopes('["read", "write"]') == ["read", "write"]
+
+    def test_comma_separated(self):
+        assert _parse_scopes("read,write") == ["read", "write"]
+
+    def test_comma_separated_with_spaces(self):
+        assert _parse_scopes("read, write, admin") == ["read", "write", "admin"]
+
+    def test_empty_string(self):
+        assert _parse_scopes("") == []
+
+    def test_none(self):
+        assert _parse_scopes(None) == []
+
+    def test_single_scope_json(self):
+        assert _parse_scopes('["read"]') == ["read"]
+
+    def test_single_scope_plain(self):
+        assert _parse_scopes("read") == ["read"]
+
+    def test_empty_json_array(self):
+        assert _parse_scopes("[]") == []
 
 
 @pytest.fixture

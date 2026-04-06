@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Users - AI Mailbox{% endblock %}
+{% block content %}
+<div class="max-w-xl mx-auto p-4">
+    <div class="bg-base-100 border border-base-300 rounded">
+        <div class="px-4 py-2.5 border-b border-base-200">
+            <span class="text-sm font-semibold">Users</span>
+        </div>
+        <table class="table table-sm">
+            <thead>
+                <tr class="text-xs text-base-content/40">
+                    <th class="font-medium">User</th>
+                    <th class="font-medium">Type</th>
+                    <th class="font-medium">Status</th>
+                    <th class="font-medium">Last seen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr class="text-sm">
+                    <td>{{ user.display_name }}</td>
+                    <td>
+                        <span class="text-xs text-base-content/50">{{ user.user_type }}</span>
+                    </td>
+                    <td>
+                        {% if user.online %}
+                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span><span class="text-xs">online</span>
+                        {% else %}
+                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-base-300 mr-1"></span><span class="text-xs text-base-content/40">offline</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-xs text-base-content/40">{{ user.last_seen | relative_time }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

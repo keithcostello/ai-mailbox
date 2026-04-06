@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ error_title }} - AI Mailbox{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center min-h-[calc(100vh-68px)]">
+    <div class="card w-96 bg-base-100 shadow-xl">
+        <div class="card-body items-center text-center">
+            <div class="text-7xl font-bold text-primary/20 mb-2">{{ error_code }}</div>
+            <h2 class="card-title text-xl">{{ error_title }}</h2>
+            <p class="text-base-content/60 mt-1">{{ error_message }}</p>
+            <div class="card-actions mt-6">
+                <a href="/web/inbox" class="btn btn-primary">Back to Inbox</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

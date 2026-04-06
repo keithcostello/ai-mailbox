@@ -18,10 +18,20 @@ from ai_mailbox.config import Config
 from ai_mailbox.db.connection import SQLiteDB, PostgresDB
 from ai_mailbox.oauth import MailboxOAuthProvider, hash_password, current_user_id
 from ai_mailbox.tools.send import tool_send_message
-from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
+from ai_mailbox.tools.list_messages import tool_list_messages
+from ai_mailbox.tools.mark_read import tool_mark_read
+from ai_mailbox.tools.list_users import tool_list_users
+from ai_mailbox.tools.create_group import tool_create_group
+from ai_mailbox.tools.add_participant import tool_add_participant
+from ai_mailbox.tools.search import tool_search_messages
+from ai_mailbox.tools.acknowledge import tool_acknowledge
+from ai_mailbox.tools.archive import tool_archive_conversation
+from ai_mailbox.db.queries import update_last_seen
+from ai_mailbox.web import create_web_routes
+from ai_mailbox.web_oauth import create_oauth_routes
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +58,7 @@ def _make_postgres_db(database_url: str) -> PostgresDB:
 
 
 def _seed_users(db, config: Config) -> None:
-    """Upsert users with password hashes."""
+    """Upsert users with password hashes and seed invites."""
     users = [
         ("keith", "Keith", config.keith_password),
         ("amy", "Amy", config.amy_password),
@@ -72,6 +82,19 @@ def _seed_users(db, config: Config) -> None:
     db.commit()
     logger.info(f"Seeded {len([u for u in users if u[2]])} users")
 
+    # Seed invites from MAILBOX_INVITED_EMAILS
+    if config.invited_emails:
+        emails = [e.strip() for e in config.invited_emails.split(",") if e.strip()]
+        for email in emails:
+            existing = db.fetchone("SELECT email FROM user_invites WHERE email = ?", (email,))
+            if not existing:
+                db.execute(
+                    "INSERT INTO user_invites (email, invited_by) VALUES (?, ?)",
+                    (email, "keith"),
+                )
+        db.commit()
+        logger.info(f"Seeded {len(emails)} invite(s)")
+
 
 def _get_user_from_request(request: StarletteRequest, provider: MailboxOAuthProvider) -> str | None:
     """Extract user_id from OAuth bearer token in request."""
@@ -89,6 +112,10 @@ def create_app() -> object:
     config = Config.from_env()
     logging.basicConfig(level=getattr(logging, config.log_level))
 
+    # Validate configuration (fatal errors prevent startup)
+    for warning in config.validate():
+        logger.warning(warning)
+
     # Database setup
     logger.info("Starting database setup...")
     if config.database_url:
@@ -101,6 +128,10 @@ def create_app() -> object:
     logger.info("Seeding users...")
     _seed_users(db, config)
     logger.info("Database setup complete")
+
+    # Run initial token cleanup
+    from ai_mailbox.token_cleanup import cleanup_expired_tokens
+    cleanup_expired_tokens(db)
 
     # OAuth provider
     provider = MailboxOAuthProvider(db=db, jwt_secret=config.jwt_secret)
@@ -135,47 +166,89 @@ def create_app() -> object:
     # --- MCP Tools (user identity from OAuth token via contextvars) ---
 
     def _get_user() -> str:
-        """Get authenticated user_id from OAuth context. Logs for isolation audit."""
+        """Get authenticated user_id from OAuth context. Updates last_seen."""
         uid = current_user_id.get("unknown")
         logger.info(f"Tool call: authenticated as user={uid}")
+        update_last_seen(db, uid)
         return uid
 
     @mcp.tool()
-    def send_message(to: str, body: str, project: str = "general", subject: str = "") -> dict:
-        """Send a message to another user. Use project to organize by topic."""
+    def send_message(
+        body: str,
+        to: str | list[str] | None = None,
+        project: str = "general",
+        subject: str = "",
+        conversation_id: str | None = None,
+        content_type: str = "text/plain",
+        idempotency_key: str | None = None,
+        group_name: str | None = None,
+        group_send_token: str | None = None,
+    ) -> dict:
+        """Send a message. Use 'to' for direct (string) or group (list). Use 'conversation_id' for existing conversations. Group sends require a group_send_token from a confirmation step."""
         uid = _get_user()
-        logger.info(f"send_message: from={uid} to={to} project={project}")
+        logger.info(f"send_message: from={uid} to={to} conv={conversation_id} project={project}")
         return tool_send_message(
             db, user_id=uid, to=to, body=body,
             project=project, subject=subject or None,
+            conversation_id=conversation_id,
+            content_type=content_type,
+            idempotency_key=idempotency_key,
+            group_name=group_name,
+            group_send_token=group_send_token,
         )
 
     @mcp.tool()
-    def check_messages(project: str = "", unread_only: bool = True) -> dict:
-        """Check your inbox. Returns messages and marks them as read."""
+    def list_messages(
+        project: str = "",
+        unread_only: bool = True,
+        conversation_id: str | None = None,
+        limit: int = 50,
+        after_sequence: int = 0,
+    ) -> dict:
+        """List messages without marking as read. Pure read operation with pagination."""
         uid = _get_user()
-        logger.info(f"check_messages: user={uid} project={project or 'all'}")
-        return tool_check_messages(
+        logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
+        return tool_list_messages(
             db, user_id=uid,
             project=project or None, unread_only=unread_only,
+            conversation_id=conversation_id,
+            limit=limit, after_sequence=after_sequence,
         )
 
     @mcp.tool()
-    def reply_to_message(message_id: str, body: str) -> dict:
+    def mark_read(conversation_id: str, up_to_sequence: int | None = None) -> dict:
+        """Mark messages as read up to a sequence number in a conversation."""
+        uid = _get_user()
+        logger.info(f"mark_read: user={uid} conv={conversation_id} up_to={up_to_sequence}")
+        return tool_mark_read(
+            db, user_id=uid,
+            conversation_id=conversation_id,
+            up_to_sequence=up_to_sequence,
+        )
+
+    @mcp.tool()
+    def reply_to_message(
+        message_id: str, body: str,
+        content_type: str = "text/plain",
+        idempotency_key: str | None = None,
+    ) -> dict:
         """Reply to a specific message. Inherits project and thread."""
         uid = _get_user()
         logger.info(f"reply_to_message: user={uid} message_id={message_id}")
         return tool_reply_to_message(
             db, user_id=uid, message_id=message_id, body=body,
+            content_type=content_type,
+            idempotency_key=idempotency_key,
         )
 
     @mcp.tool()
-    def get_thread(message_id: str) -> dict:
+    def get_thread(message_id: str, limit: int = 100, after_sequence: int = 0) -> dict:
         """Get the full conversation thread from any message in it."""
         uid = _get_user()
         logger.info(f"get_thread: user={uid} message_id={message_id}")
         return tool_get_thread(
             db, user_id=uid, message_id=message_id,
+            limit=limit, after_sequence=after_sequence,
         )
 
     @mcp.tool()
@@ -184,6 +257,67 @@ def create_app() -> object:
         uid = _get_user()
         logger.info(f"whoami: user={uid}")
         return tool_whoami(db, user_id=uid)
+
+    @mcp.tool()
+    def list_users() -> dict:
+        """List all registered users (except yourself)."""
+        uid = _get_user()
+        logger.info(f"list_users: user={uid}")
+        return tool_list_users(db, user_id=uid)
+
+    @mcp.tool()
+    def create_group(name: str, members: list[str], project: str = "general") -> dict:
+        """Create a named group conversation."""
+        uid = _get_user()
+        logger.info(f"create_group: user={uid} name={name} members={members}")
+        return tool_create_group(
+            db, user_id=uid, name=name, members=members, project=project,
+        )
+
+    @mcp.tool()
+    def add_participant(conversation_id: str, user_to_add: str) -> dict:
+        """Add a user to a group conversation. Cannot add to direct conversations."""
+        uid = _get_user()
+        logger.info(f"add_participant: user={uid} conv={conversation_id} adding={user_to_add}")
+        return tool_add_participant(
+            db, user_id=uid,
+            conversation_id=conversation_id,
+            user_to_add=user_to_add,
+        )
+
+    @mcp.tool()
+    def search_messages(
+        query: str,
+        project: str | None = None,
+        from_user: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 20,
+    ) -> dict:
+        """Search messages across all your conversations. Returns matching messages ordered by relevance."""
+        uid = _get_user()
+        logger.info(f"search_messages: user={uid} query={query!r}")
+        return tool_search_messages(
+            db, user_id=uid, query=query,
+            project=project, from_user=from_user,
+            since=since, until=until, limit=limit,
+        )
+
+    @mcp.tool()
+    def acknowledge(message_id: str, state: str) -> dict:
+        """Acknowledge a message. States: received, processing, completed, failed. Forward-only transitions."""
+        uid = _get_user()
+        logger.info(f"acknowledge: user={uid} message_id={message_id} state={state}")
+        return tool_acknowledge(db, user_id=uid, message_id=message_id, state=state)
+
+    @mcp.tool()
+    def archive_conversation(conversation_id: str, archive: bool = True) -> dict:
+        """Archive or unarchive a conversation. Archive=True to archive, False to unarchive."""
+        uid = _get_user()
+        logger.info(f"archive_conversation: user={uid} conv={conversation_id} archive={archive}")
+        return tool_archive_conversation(
+            db, user_id=uid, conversation_id=conversation_id, archive=archive,
+        )
 
     # --- Login page ---
 
@@ -242,27 +376,39 @@ def create_app() -> object:
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
-            "version": "0.2.0",
+            "version": "0.6.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         })
+
+    # Web UI routes (Jinja2 + HTMX + Tailwind)
+    web_routes = create_web_routes(
+        db, provider, config.jwt_secret,
+        github_oauth=config.github_oauth_available,
+    )
+
+    # OAuth routes (GitHub login)
+    oauth_routes = []
+    if config.github_oauth_available:
+        oauth_routes = create_oauth_routes(db, provider, config, config.jwt_secret)
 
     mcp._custom_starlette_routes = [
         Route("/health", health),
         Route("/login", login_get, methods=["GET"]),
         Route("/login", login_post, methods=["POST"]),
-    ]
+    ] + oauth_routes + web_routes
 
     # Build ASGI app
     app = mcp.streamable_http_app()
 
-    # CORS
+    # CORS -- restricted to explicit origins
     from starlette.middleware.cors import CORSMiddleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=config.get_cors_origins(),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        allow_credentials=True,
     )
 
     return app
