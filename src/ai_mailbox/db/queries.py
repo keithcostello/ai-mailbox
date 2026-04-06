@@ -281,11 +281,15 @@ def get_max_sequence(db: DBConnection, conversation_id: str) -> int:
 
 def advance_read_cursor(db: DBConnection, conversation_id: str, user_id: str, sequence: int) -> None:
     """Advance user's read cursor. Only moves forward, never backward."""
+    # Use CASE expression for cross-DB compat (SQLite has no GREATEST, Postgres MAX is aggregate-only)
     db.execute(
         """UPDATE conversation_participants
-           SET last_read_sequence = MAX(last_read_sequence, ?)
+           SET last_read_sequence = CASE
+               WHEN last_read_sequence < ? THEN ?
+               ELSE last_read_sequence
+           END
            WHERE conversation_id = ? AND user_id = ?""",
-        (sequence, conversation_id, user_id),
+        (sequence, sequence, conversation_id, user_id),
     )
     db.commit()
 
