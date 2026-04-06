@@ -202,10 +202,10 @@ def create_app() -> object:
         project: str = "",
         unread_only: bool = True,
         conversation_id: str | None = None,
-        limit: int = 50,
+        limit: int = 20,
         after_sequence: int = 0,
     ) -> dict:
-        """List AI Mailbox messages without marking as read. Pure read operation with pagination."""
+        """List AI Mailbox messages without marking as read. Bodies truncated to 200 chars -- use mailbox_get_thread for full content. Pagination via after_sequence."""
         uid = _get_user()
         logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
         return tool_list_messages(
