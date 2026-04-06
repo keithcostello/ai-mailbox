@@ -55,13 +55,13 @@ async def test_mcp_tools_registered():
     tools = await _mcp_instance.list_tools()
     tool_names = {t.name for t in tools}
     expected = {
-        "send_message", "reply_to_message", "get_thread", "whoami",
+        "mailbox_send_message", "mailbox_reply_to_message", "mailbox_get_thread", "mailbox_whoami",
         # Sprint 2
-        "list_messages", "mark_read", "list_users", "create_group", "add_participant",
+        "mailbox_list_messages", "mailbox_mark_read", "mailbox_list_users", "mailbox_create_group", "mailbox_add_participant",
         # Sprint 4
-        "search_messages",
+        "mailbox_search_messages",
         # Sprint 5
-        "acknowledge", "archive_conversation",
+        "mailbox_acknowledge", "mailbox_archive_conversation",
     }
     assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
