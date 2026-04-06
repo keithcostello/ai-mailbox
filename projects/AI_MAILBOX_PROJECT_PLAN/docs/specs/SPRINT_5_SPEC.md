@@ -1,6 +1,6 @@
 # Sprint 5 Spec: Acknowledgment + Archiving + Agent Identity
 
-**Status:** DRAFT -- awaiting approval
+**Status:** COMPLETE -- implemented, deployed, UAT passed (f7f16f0)
 **Branch:** mvp-1-staging
 **Railway Environment:** MVP 1 Staging (ai-mailbox-server-mvp-1-staging.up.railway.app)
 **GitHub Issues:** #9 (CASCADE on user FKs), #10 (narrow PostgresDB retry), #11 (OAuth FK constraints)

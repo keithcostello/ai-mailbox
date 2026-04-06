@@ -1,21 +1,19 @@
 # AI_MAILBOX_PROJECT_PLAN
 
 **Status:** ACTIVE
-**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 4 complete, Sprint 5 spec written
+**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 5 complete, ready for Sprint 6
 **Expected Branch:** mvp-1-staging
 **PR URL:**
-**Relevant Handoff:** projects/AI_MAILBOX_PROJECT_PLAN/docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md
+**Relevant Handoff:** projects/AI_MAILBOX_PROJECT_PLAN/docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md
 
 ## Next Steps
 
-- Approve Sprint 5 spec (SPRINT_5_SPEC.md)
-- Implement Sprint 5 via 11-step TDD (target 410+ tests)
+- Write Sprint 6 spec (webhook delivery, notification preferences, agent registration)
+- Implement Sprint 6 via TDD
 - Deploy and pass AI UX UAT + Human UAT
-- Close GitHub issues #9, #10, #11
 
 ## Pending Tasks
 
-- Sprint 5 spec written, awaiting approval
 - Railway auto-deploy from mvp-1-staging push not working (used CLI fallback) [TD-002]
 - Resolve production dual-Postgres question (Postgres vs Postgres-bbLI, both at 0MB) [TD-003]
 - Staging DB has legacy columns (to_user, read, project on messages) -- migration 003 didn't drop them [TD-001]
@@ -40,14 +38,14 @@
 | `docs/specs/SPRINT_2_SPEC.md` | complete | Claude | Sprint 2 spec, approved, implemented, deployed |
 | `docs/specs/SPRINT_3_SPEC.md` | complete | Claude | Sprint 3 spec, approved, implemented, deployed |
 | `docs/specs/SPRINT_4_SPEC.md` | complete | Claude | Sprint 4 spec, approved, implemented, deployed |
-| `docs/specs/SPRINT_5_SPEC.md` | written | Claude | Sprint 5 spec, awaiting approval |
+| `docs/specs/SPRINT_5_SPEC.md` | complete | Claude | Sprint 5 spec, approved, implemented, deployed |
 | `docs/architecture/ARCHITECTURE_DEEP_DIVE.md` | complete | Claude | Codebase analysis, 16 issues filed |
 | `docs/reference/RAILWAY_ENVIRONMENTS.md` | complete | Claude | Environment documentation |
 | `docs/plans/SAAS_PRODUCT_ANALYSIS.md` | complete | Claude | Auth, registration, pricing, UI analysis |
 | `docs/plans/FEATURE_REQUIREMENTS_ANALYSIS.md` | complete | Claude | 47 features prioritized P0-P3 |
 | `docs/plans/COMPETITIVE_LANDSCAPE.md` | complete | Claude | Protocols, frameworks, positioning |
 | `docs/plans/SPRINT_ROADMAP.md` | active | Claude | 8-sprint plan |
-| `docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md` | current | Claude | Sprint 5 continuation prompt |
+| `docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 5 continuation prompt (used) |
 
 ## Recent Activity Log
 
@@ -73,4 +71,7 @@
 - 2026-04-06: Migration runner fix for $$ dollar-quoted PL/pgSQL blocks (f172d9e).
 - 2026-04-06: Deployed to MVP 1 Staging. Migration 004 (FTS) applied. AI UX UAT passed (5/5).
 - 2026-04-06: Human UAT passed. GitHub issue #14 closed. Sprint 4 COMPLETE.
-- 2026-04-06: Sprint 5 spec written (ACK, archiving, agent identity, tech debt #9/#10/#11). Awaiting approval.
+- 2026-04-06: Sprint 5 spec written (ACK, archiving, agent identity, tech debt #9/#10/#11).
+- 2026-04-06: Sprint 5 implemented via parallel TDD. 424 tests passing. 25 files changed.
+- 2026-04-06: Deployed to MVP 1 Staging. Migration 005 applied. AI UX UAT passed (4/4).
+- 2026-04-06: Human UAT passed. GitHub issues #9, #10, #11 closed. Sprint 5 COMPLETE.
