@@ -1,64 +1,69 @@
 {% if error %}
-<div class="ui negative message">
-    <p>{{ error }}</p>
-</div>
+<div class="alert alert-error mb-4"><span>{{ error }}</span></div>
 {% endif %}
 
-<div class="ui segment">
-    <h3 class="ui header">
-        {% set others = [] %}
-        {% for p in participants if p != user_id %}
-            {% if others.append(p) %}{% endif %}
-        {% endfor %}
-        {{ others | join(', ') }}
-        {% if conversation.project %}
-        <div class="ui small label" style="margin-left: 8px;">{{ conversation.project }}</div>
-        {% endif %}
-        <div class="sub header">
-            {% if conversation.type == 'direct' %}Direct message{% elif conversation.type == 'team_group' %}Group: {{ conversation.name }}{% else %}Project group{% endif %}
-            &middot; {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
-        </div>
-    </h3>
-
-    <div class="ui divider"></div>
-
-    <div class="ui comments" id="message-list">
-        {% for msg in messages %}
-        <div class="comment">
-            <a class="avatar">
-                <i class="large user circle icon" style="font-size: 2.5em; color: {% if msg.from_user == user_id %}#2185d0{% else %}#21ba45{% endif %};"></i>
-            </a>
-            <div class="content">
-                <a class="author">{{ msg.from_user }}</a>
-                <div class="metadata">
-                    <span class="date">{{ msg.created_at | relative_time }}</span>
-                    {% if msg.subject %}
-                    <span>Re: {{ msg.subject }}</span>
+<div class="card bg-base-100 shadow">
+    <div class="card-body">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="card-title text-lg">
+                    {% set others = [] %}
+                    {% for p in participants if p != user_id %}
+                        {% if others.append(p) %}{% endif %}
+                    {% endfor %}
+                    {{ others | join(', ') }}
+                </h3>
+                <div class="text-sm text-base-content/60">
+                    {% if conversation.type == 'direct' %}Direct message
+                    {% elif conversation.type == 'team_group' %}Group: {{ conversation.name }}
+                    {% else %}Project group{% endif %}
+                    &middot; {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
+                    {% if conversation.project %}
+                    <span class="badge badge-ghost badge-sm ml-1">{{ conversation.project }}</span>
                     {% endif %}
                 </div>
-                <div class="text" style="white-space: pre-wrap;">{{ msg.body }}</div>
             </div>
         </div>
-        {% endfor %}
-    </div>
 
-    <div class="ui divider"></div>
+        <div class="divider my-2"></div>
 
-    <form class="ui reply form"
-          hx-post="/web/conversation/{{ conversation.id }}/reply"
-          hx-target="#main-content"
-          hx-swap="innerHTML">
-        <div class="field">
-            <textarea name="body" rows="3" placeholder="Write a reply..." required></textarea>
+        <!-- Messages -->
+        <div id="message-list" class="space-y-1 max-h-[calc(100vh-320px)] overflow-y-auto pr-2">
+            {% for msg in messages %}
+            <div class="chat {{ 'chat-end' if msg.from_user == user_id else 'chat-start' }}">
+                <div class="chat-header text-sm mb-1">
+                    {{ msg.from_user }}
+                    {% if is_ai_user(msg.from_user) %}
+                    <span class="badge badge-info badge-xs ml-1">AI</span>
+                    {% endif %}
+                    <time class="text-xs opacity-50 ml-1">{{ msg.created_at | relative_time }}</time>
+                </div>
+                <div class="chat-bubble {{ 'chat-bubble-primary' if msg.from_user == user_id else '' }}">
+                    <div class="prose-msg text-sm">{{ msg.body | markdown }}</div>
+                </div>
+                {% if msg.subject %}
+                <div class="chat-footer text-xs opacity-50">Re: {{ msg.subject }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        <button class="ui blue labeled icon button" type="submit">
-            <i class="edit icon"></i> Reply
-        </button>
-    </form>
+
+        <div class="divider my-2"></div>
+
+        <!-- Reply form -->
+        <form hx-post="/web/conversation/{{ conversation.id }}/reply"
+              hx-target="#main-content"
+              hx-swap="innerHTML"
+              class="flex gap-2 items-end">
+            <textarea name="body" rows="2" placeholder="Write a reply..."
+                      class="textarea textarea-bordered flex-1 text-sm" required></textarea>
+            <button type="submit" class="btn btn-primary btn-sm">Reply</button>
+        </form>
+    </div>
 </div>
 
 <script>
-// Refresh sidebar preserving current filter state + auto-scroll
 (function() {
     var project = document.getElementById('project-filter');
     var participant = document.getElementById('participant-filter');

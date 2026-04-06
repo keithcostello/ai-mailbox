@@ -1,33 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Health - AI Mailbox{% endblock %}
 {% block content %}
-<div class="ui container" style="padding-top: 2em;">
-    <h2 class="ui header">System Health</h2>
-    <table class="ui celled table">
-        <tbody>
-            <tr>
-                <td><strong>Status</strong></td>
-                <td>
-                    {% if health.status == 'healthy' %}
-                    <span style="color: green; font-weight: bold;">HEALTHY</span>
-                    {% else %}
-                    <span style="color: red; font-weight: bold;">UNHEALTHY</span>
-                    {% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td><strong>Version</strong></td>
-                <td>{{ health.version }}</td>
-            </tr>
-            <tr>
-                <td><strong>Users</strong></td>
-                <td>{{ health.user_count }}</td>
-            </tr>
-            <tr>
-                <td><strong>Auth</strong></td>
-                <td>{{ health.auth }}</td>
-            </tr>
-        </tbody>
-    </table>
+<div class="container mx-auto p-8 max-w-2xl">
+    <div class="card bg-base-100 shadow">
+        <div class="card-body">
+            <h2 class="card-title text-xl mb-4">System Health</h2>
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <tbody>
+                        <tr>
+                            <td class="font-medium">Status</td>
+                            <td>
+                                {% if health.status == 'healthy' %}
+                                <span class="badge badge-success">HEALTHY</span>
+                                {% else %}
+                                <span class="badge badge-error">UNHEALTHY</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr><td class="font-medium">Version</td><td>{{ health.version }}</td></tr>
+                        <tr><td class="font-medium">Users</td><td>{{ health.user_count }}</td></tr>
+                        <tr><td class="font-medium">Auth</td><td>{{ health.auth }}</td></tr>
+                        {% if health.last_cleanup_at %}
+                        <tr><td class="font-medium">Last Cleanup</td><td>{{ health.last_cleanup_at }}</td></tr>
+                        {% endif %}
+                        {% if health.next_cleanup_at %}
+                        <tr><td class="font-medium">Next Cleanup</td><td>{{ health.next_cleanup_at }}</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

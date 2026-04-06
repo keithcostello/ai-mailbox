@@ -1,56 +1,70 @@
 {% if error %}
-<div class="ui negative message">
-    <p>{{ error }}</p>
-</div>
+<div class="alert alert-error mb-4"><span>{{ error }}</span></div>
 {% endif %}
-
 {% if success %}
-<div class="ui positive message">
-    <p>{{ success }}</p>
-</div>
+<div class="alert alert-success mb-4"><span>{{ success }}</span></div>
 {% endif %}
 
-<div class="ui segment">
-    <h3 class="ui header">
-        <i class="edit icon"></i>
-        <div class="content">New Message</div>
-    </h3>
+<div class="card bg-base-100 shadow">
+    <div class="card-body">
+        <h3 class="card-title text-lg">New Message</h3>
 
-    <form class="ui form"
-          hx-post="/web/compose"
-          hx-target="#main-content"
-          hx-swap="innerHTML">
-        <div class="field">
-            <label>To</label>
-            <select name="to" class="ui search dropdown" required>
-                <option value="">Select recipient</option>
-                {% for user in users %}
-                <option value="{{ user.id }}" {% if form_to == user.id %}selected{% endif %}>{{ user.display_name }} ({{ user.id }})</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
-            <label>Project</label>
-            <div class="ui input">
-                <input type="text" name="project" value="{{ form_project or 'general' }}" placeholder="Project name">
+        <form hx-post="/web/compose" hx-target="#main-content" hx-swap="innerHTML"
+              class="space-y-4 mt-2">
+            <div class="form-control">
+                <label class="label"><span class="label-text">To</span></label>
+                <select name="to" class="select select-bordered w-full" required>
+                    <option value="" disabled {{ 'selected' if not form_to }}>Select recipient</option>
+                    {% for user in users %}
+                    <option value="{{ user.id }}" {% if form_to == user.id %}selected{% endif %}>
+                        {{ user.display_name }} ({{ user.id }})
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
-        </div>
-        <div class="field">
-            <label>Subject (optional)</label>
-            <div class="ui input">
-                <input type="text" name="subject" value="{{ form_subject or '' }}" placeholder="Subject">
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Project</span></label>
+                <select name="project" class="select select-bordered w-full">
+                    <option value="general" {{ 'selected' if (form_project or 'general') == 'general' }}>general</option>
+                    {% for p in projects %}
+                    {% if p != 'general' %}
+                    <option value="{{ p }}" {{ 'selected' if form_project == p }}>{{ p }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
             </div>
-        </div>
-        <div class="field">
-            <label>Message</label>
-            <textarea name="body" rows="5" placeholder="Write your message..." required>{{ form_body or '' }}</textarea>
-        </div>
-        <button class="ui blue labeled icon button" type="submit">
-            <i class="send icon"></i> Send
-        </button>
-    </form>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Subject (optional)</span></label>
+                <input type="text" name="subject" class="input input-bordered w-full"
+                       value="{{ form_subject or '' }}" placeholder="Subject">
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Message</span></label>
+                <textarea name="body" id="compose-body" rows="5"
+                          class="textarea textarea-bordered w-full" maxlength="10000"
+                          placeholder="Write your message (markdown supported)..."
+                          required oninput="updateCharCount()">{{ form_body or '' }}</textarea>
+                <label class="label">
+                    <span class="label-text-alt" id="char-count">0 / 10,000</span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Send Message</button>
+        </form>
+    </div>
 </div>
 
 <script>
-$(function() { $('.ui.dropdown').dropdown(); });
+function updateCharCount() {
+    var body = document.getElementById('compose-body');
+    var count = document.getElementById('char-count');
+    if (!body || !count) return;
+    var len = body.value.length;
+    count.textContent = len.toLocaleString() + ' / 10,000';
+    count.className = len > 9000 ? 'label-text-alt text-error' : 'label-text-alt';
+}
+updateCharCount();
 </script>

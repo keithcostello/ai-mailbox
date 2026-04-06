@@ -1,6 +1,6 @@
-"""Web UI routes for AI Mailbox -- Semantic UI + HTMX.
+"""Web UI routes for AI Mailbox -- DaisyUI + Tailwind + HTMX.
 
-Sprint 2: Full messaging UX with thread view, compose, reply, filtering.
+Sprint 3: DaisyUI migration, error pages, AI badge, markdown rendering.
 Authentication via JWT stored in httpOnly session cookie.
 """
 
@@ -17,7 +17,10 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
+from markupsafe import Markup
+
 from ai_mailbox.config import MAX_BODY_LENGTH
+from ai_mailbox.markdown import render_markdown
 from ai_mailbox.rate_limit import check_rate_limit, WEB_LOGIN_LIMIT, WEB_PAGE_LIMIT
 
 if TYPE_CHECKING:
@@ -30,6 +33,20 @@ _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATE_DIR)), autoescape=True)
 
 INBOX_PAGE_SIZE = 20
+
+# --- AI user badge heuristic ---
+_AI_PATTERNS = {"claude", "gpt", "bot", "gemini", "copilot"}
+
+
+def _is_ai_user(user_id: str) -> bool:
+    """Heuristic: identify AI/bot users by name pattern."""
+    lower = user_id.lower()
+    return any(pat in lower for pat in _AI_PATTERNS) or lower.startswith("ai-")
+
+
+# Register Jinja2 globals and filters
+_jinja_env.globals["is_ai_user"] = _is_ai_user
+_jinja_env.filters["markdown"] = lambda text: Markup(render_markdown(text)) if text else Markup("")
 
 
 def _render(template_name: str, status_code: int = 200, **ctx) -> HTMLResponse:
@@ -94,6 +111,38 @@ def _relative_time(timestamp_str: str | None) -> str:
 
 # Register the filter so templates can use it
 _jinja_env.filters["relative_time"] = _relative_time
+
+
+_ERROR_CONFIGS = {
+    404: ("Not Found", "The page or conversation you requested does not exist."),
+    403: ("Forbidden", "You do not have permission to access this resource."),
+    429: ("Too Many Requests", "You've made too many requests. Wait a moment and try again."),
+    500: ("Server Error", "Something went wrong. Try again or contact support."),
+}
+
+
+def _render_error(status_code: int, request=None, user_id=None, display_name=None, message=None) -> HTMLResponse:
+    """Render a DaisyUI error page."""
+    title, default_msg = _ERROR_CONFIGS.get(status_code, ("Error", "An error occurred."))
+    tmpl = _jinja_env.get_template("error.html")
+    html = tmpl.render(
+        error_code=status_code,
+        error_title=title,
+        error_message=message or default_msg,
+        user_id=user_id,
+        display_name=display_name,
+    )
+    return HTMLResponse(html, status_code=status_code)
+
+
+def _htmx_error(status_code: int, message: str | None = None) -> HTMLResponse:
+    """Return inline error for HTMX requests."""
+    title, default_msg = _ERROR_CONFIGS.get(status_code, ("Error", "An error occurred."))
+    msg = message or default_msg
+    return HTMLResponse(
+        f'<div class="alert alert-error"><span>{msg}</span></div>',
+        status_code=status_code,
+    )
 
 
 def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secret: str) -> list[Route]:
@@ -177,7 +226,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             return RedirectResponse(url="/web/login", status_code=302)
 
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return _render("login.html", error="Rate limit exceeded. Try again later.", user_id=None, status_code=429)
+            return _render_error(429, user_id=user_id)
 
         display_name = _get_user_display_name(db, user_id)
         projects = get_user_projects(db, user_id)
@@ -205,7 +254,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             return RedirectResponse(url="/web/login", status_code=302)
 
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return HTMLResponse("Rate limited", status_code=429)
+            return _htmx_error(429)
 
         project_filter = request.query_params.get("project", "")
         participant_filter = request.query_params.get("participant", "")
@@ -244,17 +293,28 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         if not user_id:
             return RedirectResponse(url="/web/login", status_code=302)
 
+        display_name = _get_user_display_name(db, user_id)
+
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return HTMLResponse("Rate limited", status_code=429)
+            if _is_htmx(request):
+                return _htmx_error(429)
+            return _render_error(429, user_id=user_id, display_name=display_name)
 
         conv_id = request.path_params["conv_id"]
-        conv = get_conversation(db, conv_id)
+        try:
+            conv = get_conversation(db, conv_id)
+        except Exception:
+            conv = None
         if not conv:
-            return _render("partials/empty_state.html", status_code=404)
+            if _is_htmx(request):
+                return _htmx_error(404)
+            return _render_error(404, user_id=user_id, display_name=display_name)
 
         participants = get_conversation_participants(db, conv_id)
         if user_id not in participants:
-            return _render("partials/empty_state.html", status_code=403)
+            if _is_htmx(request):
+                return _htmx_error(403)
+            return _render_error(403, user_id=user_id, display_name=display_name)
 
         messages, _ = get_conversation_messages(db, conv_id)
 
@@ -299,16 +359,19 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             return RedirectResponse(url="/web/login", status_code=302)
 
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return HTMLResponse("Rate limited", status_code=429)
+            return _htmx_error(429)
 
         conv_id = request.path_params["conv_id"]
-        conv = get_conversation(db, conv_id)
+        try:
+            conv = get_conversation(db, conv_id)
+        except Exception:
+            conv = None
         if not conv:
-            return HTMLResponse("Conversation not found", status_code=404)
+            return _htmx_error(404)
 
         participants = get_conversation_participants(db, conv_id)
         if user_id not in participants:
-            return HTMLResponse("Permission denied", status_code=403)
+            return _htmx_error(403)
 
         form = await request.form()
         body = form.get("body", "").strip()
@@ -356,15 +419,19 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             return RedirectResponse(url="/web/login", status_code=302)
 
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return HTMLResponse("Rate limited", status_code=429)
+            if _is_htmx(request):
+                return _htmx_error(429)
+            return _render_error(429, user_id=user_id)
 
         all_users = get_all_users(db)
         users = [{"id": u["id"], "display_name": u["display_name"]} for u in all_users if u["id"] != user_id]
+        user_projects = get_user_projects(db, user_id)
 
         html = _render(
             "partials/compose_form.html",
             user_id=user_id,
             users=users,
+            projects=user_projects,
             error=None,
             success=None,
             form_to="", form_project="general", form_subject="", form_body="",
@@ -394,7 +461,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             return RedirectResponse(url="/web/login", status_code=302)
 
         if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
-            return HTMLResponse("Rate limited", status_code=429)
+            return _htmx_error(429)
 
         form = await request.form()
         to = form.get("to", "").strip()
@@ -404,6 +471,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
 
         all_users = get_all_users(db)
         users = [{"id": u["id"], "display_name": u["display_name"]} for u in all_users if u["id"] != user_id]
+        user_projects = get_user_projects(db, user_id)
 
         # Validate
         error = None
@@ -423,6 +491,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
                 "partials/compose_form.html",
                 user_id=user_id,
                 users=users,
+                projects=user_projects,
                 error=error,
                 success=None,
                 form_to=to, form_project=project, form_subject=subject or "", form_body=body,

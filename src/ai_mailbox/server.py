@@ -95,6 +95,10 @@ def create_app() -> object:
     config = Config.from_env()
     logging.basicConfig(level=getattr(logging, config.log_level))
 
+    # Validate configuration (fatal errors prevent startup)
+    for warning in config.validate():
+        logger.warning(warning)
+
     # Database setup
     logger.info("Starting database setup...")
     if config.database_url:
@@ -107,6 +111,10 @@ def create_app() -> object:
     logger.info("Seeding users...")
     _seed_users(db, config)
     logger.info("Database setup complete")
+
+    # Run initial token cleanup
+    from ai_mailbox.token_cleanup import cleanup_expired_tokens
+    cleanup_expired_tokens(db)
 
     # OAuth provider
     provider = MailboxOAuthProvider(db=db, jwt_secret=config.jwt_secret)
@@ -343,13 +351,14 @@ def create_app() -> object:
     # Build ASGI app
     app = mcp.streamable_http_app()
 
-    # CORS
+    # CORS -- restricted to explicit origins
     from starlette.middleware.cors import CORSMiddleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=config.get_cors_origins(),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        allow_credentials=True,
     )
 
     return app

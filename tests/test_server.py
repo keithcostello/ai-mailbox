@@ -83,8 +83,9 @@ async def test_web_login_page_renders():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/web/login")
     assert resp.status_code == 200
-    assert "semantic" in resp.text.lower()
+    assert "daisyui" in resp.text.lower()
     assert "htmx.org" in resp.text
+    assert "fantasy" in resp.text.lower()  # DaisyUI theme
 
 
 @pytest.mark.asyncio

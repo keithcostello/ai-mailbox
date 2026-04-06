@@ -1,33 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Login - AI Mailbox{% endblock %}
+{% block title %}Sign In - AI Mailbox{% endblock %}
 {% block content %}
-<div class="ui middle aligned center aligned grid" style="height: 80vh;">
-    <div class="column" style="max-width: 400px;">
-        <h2 class="ui header" style="text-align: center;">AI Mailbox</h2>
-
-        {% if error %}
-        <div class="ui negative message">
-            <p>{{ error }}</p>
+<div class="flex items-center justify-center min-h-screen">
+    <div class="card w-96 bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title justify-center text-2xl mb-2">Sign In</h2>
+            {% if error %}
+            <div class="alert alert-error text-sm">
+                <span>{{ error }}</span>
+            </div>
+            {% endif %}
+            <form method="POST" action="/web/login" class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Username</span></label>
+                    <input type="text" name="username" class="input input-bordered w-full" required autofocus>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Password</span></label>
+                    <input type="password" name="password" class="input input-bordered w-full" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-full">Sign In</button>
+            </form>
         </div>
-        {% endif %}
-
-        <form method="POST" action="/web/login" class="ui large form segment">
-            <div class="field">
-                <label>Username</label>
-                <div class="ui left icon input">
-                    <i class="user icon"></i>
-                    <input type="text" name="username" placeholder="Username" required autofocus>
-                </div>
-            </div>
-            <div class="field">
-                <label>Password</label>
-                <div class="ui left icon input">
-                    <i class="lock icon"></i>
-                    <input type="password" name="password" placeholder="Password" required>
-                </div>
-            </div>
-            <button class="ui fluid large blue submit button" type="submit">Sign in</button>
-        </form>
     </div>
 </div>
 {% endblock %}

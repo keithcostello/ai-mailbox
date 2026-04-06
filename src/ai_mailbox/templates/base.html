@@ -1,28 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="fantasy">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Mailbox{% endblock %}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
-        body { background: #f7f7f7; }
-        .full-height { height: calc(100vh - 50px); overflow: hidden; }
-        .scroll-y { overflow-y: auto; }
+        .prose-msg pre { background: oklch(var(--b2)); padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
+        .prose-msg code { font-size: 0.875em; }
+        .prose-msg p { margin: 0.25rem 0; }
+        .prose-msg ul, .prose-msg ol { margin: 0.25rem 0; padding-left: 1.25rem; }
+        .prose-msg table { border-collapse: collapse; margin: 0.5rem 0; }
+        .prose-msg th, .prose-msg td { border: 1px solid oklch(var(--b3)); padding: 0.25rem 0.5rem; }
     </style>
 </head>
-<body>
+<body class="bg-base-200 min-h-screen">
     {% if user_id %}
-    <div class="ui inverted menu" style="margin-bottom: 0; border-radius: 0;">
-        <a class="header item" href="/web/inbox">AI Mailbox</a>
-        <a class="item" href="/web/inbox">Inbox</a>
-        <a class="item" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
-        <div class="right menu">
-            <div class="item">{{ display_name }}</div>
-            <a class="item" href="/web/logout" style="color: #ff6b6b;">Logout</a>
+    <div class="navbar bg-neutral text-neutral-content shadow-lg px-4">
+        <div class="flex-1">
+            <a class="btn btn-ghost text-xl normal-case" href="/web/inbox">AI Mailbox</a>
+        </div>
+        <div class="flex-none gap-2">
+            <a class="btn btn-ghost btn-sm" href="/web/inbox">Inbox</a>
+            <a class="btn btn-ghost btn-sm" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
+            <div class="divider divider-horizontal mx-0 before:bg-neutral-content/20 after:bg-neutral-content/20"></div>
+            <span class="text-sm opacity-70">{{ display_name }}</span>
+            <a class="btn btn-ghost btn-sm text-error" href="/web/logout">Logout</a>
         </div>
     </div>
     {% endif %}
@@ -30,16 +35,5 @@
     <main>
         {% block content %}{% endblock %}
     </main>
-
-    <script>
-        // Re-initialize Semantic UI components after HTMX swaps
-        document.body.addEventListener('htmx:afterSwap', function() {
-            // Preserve clearable on filter dropdowns, plain init for others
-            $('#project-filter, #participant-filter').closest('.ui.dropdown').dropdown({clearable: true});
-            $('.ui.dropdown').not('#project-filter, #participant-filter').not(
-                $('#project-filter, #participant-filter').closest('.ui.dropdown')
-            ).dropdown();
-        });
-    </script>
 </body>
 </html>

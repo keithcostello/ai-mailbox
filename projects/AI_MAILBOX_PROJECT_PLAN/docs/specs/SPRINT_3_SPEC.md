@@ -1,4 +1,4 @@
-# Sprint 3 Spec: P0 Security + Web UI Polish
+# Sprint 3 Spec: P0 Security + DaisyUI Migration
 
 **Status:** DRAFT -- awaiting approval
 **Branch:** mvp-1-staging
@@ -10,9 +10,11 @@
 
 ## 1. Overview
 
-Close the P0 security gaps identified during architecture review: validate JWT secret at startup, restrict CORS to explicit origins, add expired OAuth token/code cleanup, and remove dead code. Polish the web UI with dedicated error pages, an AI user badge in thread view, and markdown rendering for message bodies.
+Two parallel tracks: (A) close P0 security gaps (JWT validation, CORS restriction, token cleanup, dead code removal) and (B) migrate the web UI from Semantic UI 2.5.0 to DaisyUI 4 + Tailwind CSS with the `fantasy` theme. The migration rewrites all 8 templates, drops jQuery, adds dedicated error pages, AI user badges, and markdown rendering.
 
-**What does NOT change:** MCP tool signatures, database schema DDL, rate limiting configuration, group send confirmation protocol, Semantic UI framework, three-table conversation model.
+**What changes:** UI framework (Semantic UI -> DaisyUI/Tailwind), all template files, CDN dependencies (drop jQuery + Semantic UI, add Tailwind + DaisyUI), config validation, CORS middleware, token cleanup.
+
+**What does NOT change:** MCP tool signatures, database schema DDL, rate limiting logic, group send confirmation protocol, three-table conversation model, HTMX integration (stays), Python backend logic (web.py route structure stays, only template rendering and error responses change).
 
 ---
 
@@ -20,7 +22,7 @@ Close the P0 security gaps identified during architecture review: validate JWT s
 
 ### 2.1 Problem
 
-`config.py:16` defines a hardcoded default: `"change-me-in-production-minimum-32-bytes!"`. If `MAILBOX_JWT_SECRET` env var is missing, the server starts with this predictable secret. Any attacker can forge valid JWTs.
+`config.py:16` defines a hardcoded default: `"change-me-in-production-minimum-32-bytes!"`. If `MAILBOX_JWT_SECRET` env var is missing, the server starts with this predictable secret.
 
 ### 2.2 Solution
 
@@ -55,7 +57,7 @@ class Config:
 - Default secret + SQLite (local dev): log warning, allow startup
 - Default secret + PostgreSQL (staging/prod): raise `ConfigurationError`, refuse to start
 - Secret < 32 bytes: always fatal regardless of database
-- Valid secret: no warning, proceed
+- Valid custom secret >= 32 bytes: no warning, proceed
 
 ### 2.3 ConfigurationError
 
@@ -84,11 +86,11 @@ Fatal errors propagate as exceptions, preventing app startup.
 
 ### 3.1 Problem
 
-`server.py:349` sets `allow_origins=["*"]`. This permits any origin to make credentialed requests to the API.
+`server.py:349` sets `allow_origins=["*"]`. Permits any origin to make credentialed requests.
 
 ### 3.2 Solution
 
-New config field `allowed_origins` with explicit default list. Environment variable `MAILBOX_CORS_ORIGINS` accepts comma-separated origins.
+New config field `allowed_origins`. Environment variable `MAILBOX_CORS_ORIGINS` accepts comma-separated origins.
 
 ```python
 # config.py
@@ -97,28 +99,17 @@ class Config:
     # ... existing fields ...
     allowed_origins: str = ""  # comma-separated, empty = Railway URL only
 
-    @classmethod
-    def from_env(cls) -> "Config":
-        return cls(
-            # ... existing ...
-            allowed_origins=os.environ.get("MAILBOX_CORS_ORIGINS", ""),
-        )
-
     def get_cors_origins(self) -> list[str]:
         """Return list of allowed CORS origins."""
         origins = []
         if self.allowed_origins:
             origins = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
-        # Always allow the Railway deployment URL
         origins.append("https://ai-mailbox-server-mvp-1-staging.up.railway.app")
-        # Always allow localhost for dev
         origins.append("http://localhost:8000")
         return list(set(origins))
 ```
 
 ### 3.3 Integration
-
-`server.py` replaces the wildcard:
 
 ```python
 app.add_middleware(
@@ -130,215 +121,552 @@ app.add_middleware(
 )
 ```
 
-Changes from current:
-- `allow_origins`: explicit list instead of `["*"]`
-- `allow_methods`: restricted to GET/POST/OPTIONS (no PUT/DELETE/PATCH -- not used)
-- `allow_headers`: restricted to Authorization + Content-Type
-- `allow_credentials`: `True` (needed for session cookies)
-
 ---
 
 ## 4. OAuth Token/Code Cleanup (Issue #1)
 
 ### 4.1 Problem
 
-`oauth_codes` and `oauth_tokens` tables accumulate expired records. Codes expire after 5 minutes but are only deleted when exchanged. Tokens expire but are never pruned.
+`oauth_codes` and `oauth_tokens` tables accumulate expired records. No cleanup mechanism exists.
 
 ### 4.2 Solution
 
-New module `src/ai_mailbox/token_cleanup.py` with a cleanup function. Called on a schedule during app lifecycle.
+New module `src/ai_mailbox/token_cleanup.py`:
 
 ```python
-# token_cleanup.py
-import logging
-import time
-
-logger = logging.getLogger(__name__)
-
 def cleanup_expired_tokens(db) -> dict:
     """Delete expired OAuth codes and tokens. Returns counts."""
     now = time.time()
-
-    codes_deleted = db.execute(
-        "DELETE FROM oauth_codes WHERE expires_at < ?", (now,)
-    )
+    codes_deleted = db.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (now,))
     tokens_deleted = db.execute(
         "DELETE FROM oauth_tokens WHERE expires_at IS NOT NULL AND expires_at < ?", (int(now),)
     )
-
-    if codes_deleted or tokens_deleted:
-        logger.info(f"Token cleanup: {codes_deleted} expired codes, {tokens_deleted} expired tokens removed")
-
     return {"codes_deleted": codes_deleted, "tokens_deleted": tokens_deleted}
 ```
 
 ### 4.3 Scheduling
 
-Cleanup runs in two contexts:
-
-1. **On startup:** `create_app()` calls `cleanup_expired_tokens(db)` once after schema migration
-2. **Periodic:** Background task via `asyncio.create_task` that runs every 30 minutes
-
-```python
-# server.py addition
-import asyncio
-
-async def _periodic_cleanup(db, interval_seconds=1800):
-    """Run token cleanup every 30 minutes."""
-    while True:
-        await asyncio.sleep(interval_seconds)
-        try:
-            cleanup_expired_tokens(db)
-        except Exception:
-            logger.exception("Token cleanup failed")
-
-# In create_app(), after schema migration:
-cleanup_expired_tokens(db)
-
-# Starlette lifespan or on_startup hook:
-@app.on_event("startup")
-async def start_cleanup_task():
-    asyncio.create_task(_periodic_cleanup(db))
-```
+1. **On startup:** runs once after schema migration
+2. **Periodic:** asyncio background task every 30 minutes
 
 ### 4.4 Health endpoint
 
-Add cleanup stats to `/web/health`:
-- `last_cleanup_at`: ISO timestamp of last cleanup run
-- `next_cleanup_at`: ISO timestamp of next scheduled run
+Add to `/web/health`: `last_cleanup_at`, `next_cleanup_at`.
 
 ### 4.5 SQL compatibility
 
-Both SQLite and PostgreSQL support `DELETE ... WHERE expires_at < ?` with numeric timestamps. The `oauth_codes.expires_at` is FLOAT, `oauth_tokens.expires_at` is INTEGER. Both compare correctly against `time.time()`.
+Both SQLite and PostgreSQL support `DELETE ... WHERE expires_at < ?` with numeric timestamps. `oauth_codes.expires_at` is FLOAT, `oauth_tokens.expires_at` is INTEGER. Both compare correctly against `time.time()`.
 
 ---
 
 ## 5. Code Cleanup: Remove auth.py (Issue #16)
 
-### 5.1 Problem
+Delete `src/ai_mailbox/auth.py` (dead code -- legacy API key auth, not imported anywhere).
 
-`src/ai_mailbox/auth.py` contains legacy API key authentication (`AuthError` exception + `authenticate()` function). It is not imported anywhere in the codebase. OAuth 2.1 in `oauth.py` replaced it.
-
-### 5.2 Solution
-
-Delete the file. No migration needed -- nothing imports it.
-
-Also remove the legacy API key config fields from `Config`:
-- `keith_api_key`
-- `amy_api_key`
-
-And their corresponding `os.environ.get` calls. The `api_key` column on the `users` table is unused but is a schema change -- defer column removal to a future migration (tracked as existing TD-001).
+Remove legacy API key config fields from `Config`: `keith_api_key`, `amy_api_key`, and their `os.environ.get` calls. The `api_key` column on users table is a schema change -- defer to future migration (TD-001).
 
 ---
 
-## 6. Web UI: Error Pages
+## 6. UI Framework Migration: Semantic UI -> DaisyUI
 
-### 6.1 Problem
+### 6.1 Rationale
 
-Current error handling uses inline text or empty states:
-- 404: Returns `empty_state.html` with status 404 (`web.py:253`)
-- 403: Returns `empty_state.html` with status 403 (`web.py:257`)
-- 429: Returns plain text "Rate limited" (`web.py:248`)
-- 500: Unhandled -- Starlette default
+Semantic UI 2.5.0 (2018, unmaintained) produces a dated, prototype-quality UI. DaisyUI 4 on Tailwind CSS provides modern component classes, 32 built-in themes, and active maintenance. The `fantasy` theme (purple/violet primary, warm accents) was selected by the user.
 
-### 6.2 Solution
-
-New template: `src/ai_mailbox/templates/error.html`
-
-A single error template that handles all error types via context variables:
+### 6.2 CDN Swap
 
 ```html
-{# error.html - Semantic UI error page #}
+<!-- REMOVE -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
+
+<!-- ADD -->
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+```
+
+jQuery is removed entirely. HTMX stays (`https://unpkg.com/htmx.org@2.0.4`).
+
+### 6.3 Theme Configuration
+
+```html
+<html lang="en" data-theme="fantasy">
+```
+
+The `fantasy` theme provides:
+- Primary: purple/violet
+- Secondary: teal
+- Accent: gold/amber
+- Base: warm off-white backgrounds
+- Neutral: slate grays
+
+No custom color overrides needed. DaisyUI semantic classes (`btn-primary`, `bg-base-100`, `text-base-content`) automatically resolve to theme colors.
+
+### 6.4 Template Migration Map
+
+Every template is rewritten. Class-for-class mapping:
+
+| Semantic UI | DaisyUI/Tailwind |
+|---|---|
+| `ui button` | `btn` |
+| `ui primary button` | `btn btn-primary` |
+| `ui input` | `input input-bordered` |
+| `ui form` | `form` (no wrapper class needed) |
+| `ui segment` | `card bg-base-100 shadow` |
+| `ui header` | `text-2xl font-bold` |
+| `ui label` | `badge` |
+| `ui menu` | `navbar bg-base-200` |
+| `ui dropdown` | `select select-bordered` or `dropdown` component |
+| `ui comments` | `chat` component (DaisyUI chat bubbles) |
+| `ui comment` | `chat-bubble` |
+| `ui divider` | `divider` |
+| `ui negative message` | `alert alert-error` |
+| `ui positive message` | `alert alert-success` |
+| `ui grid` | Tailwind `grid grid-cols-*` |
+| `ui inverted menu` | `navbar bg-neutral text-neutral-content` |
+
+### 6.5 base.html Rewrite
+
+```html
+<!DOCTYPE html>
+<html lang="en" data-theme="fantasy">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Mailbox{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-base-200 min-h-screen">
+    {% if user_id %}
+    <div class="navbar bg-neutral text-neutral-content shadow-lg">
+        <div class="flex-1">
+            <a class="btn btn-ghost text-xl" href="/web/inbox">AI Mailbox</a>
+        </div>
+        <div class="flex-none gap-2">
+            <a class="btn btn-ghost btn-sm" href="/web/inbox">Inbox</a>
+            <a class="btn btn-ghost btn-sm" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
+            <div class="divider divider-horizontal mx-0"></div>
+            <span class="text-sm opacity-70">{{ display_name }}</span>
+            <a class="btn btn-ghost btn-sm text-error" href="/web/logout">Logout</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
+```
+
+No afterSwap handler needed for DaisyUI -- components are pure CSS, no JS initialization required. This eliminates the Semantic UI dropdown re-init bug class entirely.
+
+### 6.6 login.html Rewrite
+
+Centered card layout with DaisyUI form controls:
+
+```html
 {% extends "base.html" %}
-{% block title %}{{ error_title }} - AI Mailbox{% endblock %}
 {% block content %}
-<div class="ui container" style="padding-top: 80px;">
-    <div class="ui center aligned segment">
-        <h1 class="ui icon header">
-            <i class="{{ error_icon }} icon"></i>
-            <div class="content">
-                {{ error_code }}
-                <div class="sub header">{{ error_title }}</div>
+<div class="flex items-center justify-center min-h-[calc(100vh-68px)]">
+    <div class="card w-96 bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title justify-center text-2xl">Sign In</h2>
+            {% if error %}
+            <div class="alert alert-error">
+                <span>{{ error }}</span>
             </div>
-        </h1>
-        <p>{{ error_message }}</p>
-        <a class="ui primary button" href="/web/inbox">Back to Inbox</a>
+            {% endif %}
+            <form method="POST" action="/web/login" class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Username</span></label>
+                    <input type="text" name="username" class="input input-bordered" required autofocus>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Password</span></label>
+                    <input type="password" name="password" class="input input-bordered" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-full">Sign In</button>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
 ```
 
-### 6.3 Error configurations
+### 6.7 inbox.html Rewrite
 
-| Code | Title | Icon | Message |
-|------|-------|------|---------|
-| 404 | Not Found | `search` | The page or conversation you requested does not exist. |
-| 403 | Forbidden | `lock` | You do not have permission to access this resource. |
-| 429 | Too Many Requests | `hourglass half` | You've made too many requests. Wait a moment and try again. |
-| 500 | Server Error | `exclamation triangle` | Something went wrong. Try again or contact support. |
+Two-panel layout using Tailwind grid. Sidebar with filter dropdowns (native `<select>` with DaisyUI classes -- no jQuery needed). Main content area for thread view or compose.
 
-### 6.4 Helper function
+```html
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-cols-[320px_1fr] h-[calc(100vh-68px)]">
+    <!-- Sidebar -->
+    <div class="bg-base-100 border-r border-base-300 flex flex-col">
+        <div class="p-3 border-b border-base-300 space-y-2">
+            <select id="project-filter" class="select select-bordered select-sm w-full"
+                    hx-get="/web/inbox/conversations" hx-target="#conversation-list"
+                    hx-include="#participant-filter" name="project">
+                <option value="">All Projects</option>
+                {% for p in projects %}
+                <option value="{{ p }}" {% if filter_project == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+            <select id="participant-filter" class="select select-bordered select-sm w-full"
+                    hx-get="/web/inbox/conversations" hx-target="#conversation-list"
+                    hx-include="#project-filter" name="participant">
+                <option value="">All Participants</option>
+                {% for u in all_users %}
+                <option value="{{ u.id }}" {% if filter_participant == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div id="conversation-list" class="flex-1 overflow-y-auto">
+            {% include "partials/conversation_list.html" %}
+        </div>
+    </div>
+
+    <!-- Main content -->
+    <div id="main-content" class="overflow-y-auto p-4">
+        {% include "partials/empty_state.html" %}
+    </div>
+</div>
+{% endblock %}
+```
+
+### 6.8 conversation_list.html Rewrite
+
+Each conversation as a clickable card-like row with unread badge:
+
+```html
+{% for conv in conversations %}
+<div class="px-3 py-2 hover:bg-base-200 cursor-pointer border-b border-base-300 {% if conv.unread_count > 0 %}bg-primary/5{% endif %}"
+     hx-get="/web/conversation/{{ conv.id }}"
+     hx-target="#main-content"
+     hx-push-url="true">
+    <div class="flex items-center justify-between">
+        <div class="font-medium text-sm truncate flex-1">
+            {{ conv.other_participants | join(', ') }}
+        </div>
+        {% if conv.unread_count > 0 %}
+        <span class="badge badge-primary badge-sm">{{ conv.unread_count }}</span>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-2 mt-0.5">
+        <span class="badge badge-ghost badge-xs">{{ conv.project }}</span>
+        {% if conv.type != 'direct' %}
+        <span class="badge badge-outline badge-xs">Group</span>
+        {% endif %}
+    </div>
+    <div class="text-xs text-base-content/60 truncate mt-0.5">{{ conv.last_message_preview }}</div>
+    <div class="text-xs text-base-content/40 mt-0.5">{{ conv.last_message_at | relative_time }}</div>
+</div>
+{% endfor %}
+
+{% if has_more %}
+<div class="p-3 text-center">
+    <button class="btn btn-ghost btn-sm"
+            hx-get="/web/inbox/conversations?page={{ next_page }}&project={{ filter_project }}&participant={{ filter_participant }}"
+            hx-target="#conversation-list"
+            hx-swap="innerHTML">
+        Load more
+    </button>
+</div>
+{% endif %}
+
+{% if not conversations %}
+<div class="p-6 text-center text-base-content/50">
+    <p>No conversations yet</p>
+</div>
+{% endif %}
+```
+
+### 6.9 thread_view.html Rewrite
+
+DaisyUI `chat` component for message bubbles. Sender messages right-aligned (`chat-end`), received messages left-aligned (`chat-start`). AI badge as a DaisyUI badge.
+
+```html
+{% if error %}
+<div class="alert alert-error mb-4"><span>{{ error }}</span></div>
+{% endif %}
+
+<div class="card bg-base-100 shadow">
+    <div class="card-body">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="card-title text-lg">
+                    {% set others = [] %}
+                    {% for p in participants if p != user_id %}
+                        {% if others.append(p) %}{% endif %}
+                    {% endfor %}
+                    {{ others | join(', ') }}
+                </h3>
+                <div class="text-sm text-base-content/60">
+                    {% if conversation.type == 'direct' %}Direct message
+                    {% elif conversation.type == 'team_group' %}Group: {{ conversation.name }}
+                    {% else %}Project group{% endif %}
+                    &middot; {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
+                    {% if conversation.project %}
+                    <span class="badge badge-ghost badge-sm ml-1">{{ conversation.project }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="divider my-2"></div>
+
+        <!-- Messages -->
+        <div id="message-list" class="space-y-1 max-h-[calc(100vh-320px)] overflow-y-auto">
+            {% for msg in messages %}
+            <div class="chat {{ 'chat-end' if msg.from_user == user_id else 'chat-start' }}">
+                <div class="chat-header text-sm">
+                    {{ msg.from_user }}
+                    {% if is_ai_user(msg.from_user) %}
+                    <span class="badge badge-info badge-xs ml-1">AI</span>
+                    {% endif %}
+                    <time class="text-xs opacity-50 ml-1">{{ msg.created_at | relative_time }}</time>
+                </div>
+                <div class="chat-bubble {{ 'chat-bubble-primary' if msg.from_user == user_id else '' }}">
+                    <div class="prose prose-sm max-w-none">{{ msg.body | markdown }}</div>
+                </div>
+                {% if msg.subject %}
+                <div class="chat-footer text-xs opacity-50">Re: {{ msg.subject }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="divider my-2"></div>
+
+        <!-- Reply form -->
+        <form hx-post="/web/conversation/{{ conversation.id }}/reply"
+              hx-target="#main-content"
+              hx-swap="innerHTML"
+              class="flex gap-2">
+            <textarea name="body" rows="2" placeholder="Write a reply..."
+                      class="textarea textarea-bordered flex-1" required></textarea>
+            <button type="submit" class="btn btn-primary self-end">Reply</button>
+        </form>
+    </div>
+</div>
+
+<script>
+// Refresh sidebar preserving filter state + auto-scroll
+(function() {
+    var project = document.getElementById('project-filter');
+    var participant = document.getElementById('participant-filter');
+    var pVal = project ? project.value : '';
+    var partVal = participant ? participant.value : '';
+    var url = '/web/inbox/conversations?project=' + encodeURIComponent(pVal) + '&participant=' + encodeURIComponent(partVal);
+    htmx.ajax('GET', url, '#conversation-list');
+
+    var el = document.getElementById('message-list');
+    if (el) el.scrollTop = el.scrollHeight;
+})();
+</script>
+```
+
+### 6.10 compose_form.html Rewrite
+
+```html
+{% if error %}
+<div class="alert alert-error mb-4"><span>{{ error }}</span></div>
+{% endif %}
+{% if success %}
+<div class="alert alert-success mb-4"><span>{{ success }}</span></div>
+{% endif %}
+
+<div class="card bg-base-100 shadow">
+    <div class="card-body">
+        <h3 class="card-title text-lg">New Message</h3>
+
+        <form hx-post="/web/compose" hx-target="#main-content" hx-swap="innerHTML"
+              class="space-y-4 mt-2">
+            <div class="form-control">
+                <label class="label"><span class="label-text">To</span></label>
+                <select name="to" class="select select-bordered w-full" required>
+                    <option value="" disabled {{ 'selected' if not form_to }}>Select recipient</option>
+                    {% for user in users %}
+                    <option value="{{ user.id }}" {% if form_to == user.id %}selected{% endif %}>
+                        {{ user.display_name }} ({{ user.id }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Project</span></label>
+                <select name="project" id="project-selector" class="select select-bordered w-full">
+                    <option value="general" {{ 'selected' if (form_project or 'general') == 'general' }}>general</option>
+                    {% for p in projects %}
+                    {% if p != 'general' %}
+                    <option value="{{ p }}" {{ 'selected' if form_project == p }}>{{ p }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Subject (optional)</span></label>
+                <input type="text" name="subject" class="input input-bordered w-full"
+                       value="{{ form_subject or '' }}" placeholder="Subject">
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Message</span></label>
+                <textarea name="body" id="compose-body" rows="5"
+                          class="textarea textarea-bordered w-full" maxlength="10000"
+                          placeholder="Write your message (markdown supported)..."
+                          required oninput="updateCharCount()">{{ form_body or '' }}</textarea>
+                <label class="label">
+                    <span class="label-text-alt" id="char-count">0 / 10,000</span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Send Message</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function updateCharCount() {
+    var body = document.getElementById('compose-body');
+    var count = document.getElementById('char-count');
+    var len = body.value.length;
+    count.textContent = len.toLocaleString() + ' / 10,000';
+    count.className = len > 9000 ? 'label-text-alt text-error' : 'label-text-alt';
+}
+updateCharCount();
+</script>
+```
+
+### 6.11 empty_state.html Rewrite
+
+```html
+<div class="flex items-center justify-center h-full text-base-content/40">
+    <div class="text-center">
+        <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+        </svg>
+        <p>Select a conversation or compose a new message</p>
+    </div>
+</div>
+```
+
+### 6.12 error.html (NEW)
+
+```html
+{% extends "base.html" %}
+{% block title %}{{ error_title }} - AI Mailbox{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center min-h-[calc(100vh-68px)]">
+    <div class="card w-96 bg-base-100 shadow-xl">
+        <div class="card-body items-center text-center">
+            <div class="text-6xl font-bold text-primary/30">{{ error_code }}</div>
+            <h2 class="card-title">{{ error_title }}</h2>
+            <p class="text-base-content/60">{{ error_message }}</p>
+            <div class="card-actions mt-4">
+                <a href="/web/inbox" class="btn btn-primary">Back to Inbox</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+```
+
+### 6.13 health.html Rewrite
+
+```html
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto p-8 max-w-2xl">
+    <div class="card bg-base-100 shadow">
+        <div class="card-body">
+            <h2 class="card-title">System Health</h2>
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <tbody>
+                        {% for key, value in health.items() %}
+                        <tr><td class="font-medium">{{ key }}</td><td>{{ value }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+```
+
+### 6.14 jQuery Removal
+
+All Semantic UI jQuery initialization code is deleted:
+- `base.html`: Remove `htmx:afterSwap` handler that re-initialized `.ui.dropdown`
+- `compose_form.html`: Remove `$('.ui.dropdown').dropdown()` call
+- `inbox.html`: Remove all `$(...).dropdown({clearable: true})` calls
+
+DaisyUI dropdowns are pure CSS (using `<details>` or native `<select>`). No initialization needed. This eliminates the entire class of Semantic UI afterSwap re-initialization bugs.
+
+Filter dropdowns in the sidebar use native `<select>` elements with HTMX `hx-get` triggers on change. Clearing a filter is done by selecting the "All Projects" / "All Participants" default option.
+
+---
+
+## 7. Web UI: Error Pages
+
+### 7.1 Helper function
 
 ```python
 # web.py
-def _render_error(status_code: int, title: str, message: str, icon: str, **ctx) -> HTMLResponse:
+def _render_error(status_code: int, title: str, message: str, request=None, **ctx) -> HTMLResponse:
     html = templates.TemplateResponse("error.html", {
-        "request": ctx.get("request"),
+        "request": request,
         "error_code": status_code,
         "error_title": title,
         "error_message": message,
-        "error_icon": icon,
         "user_id": ctx.get("user_id"),
         "display_name": ctx.get("display_name"),
     })
     return HTMLResponse(html.body.decode(), status_code=status_code)
 ```
 
-### 6.5 Route changes
+### 7.2 Error configurations
 
-Replace all inline error responses:
+| Code | Title | Message |
+|------|-------|---------|
+| 404 | Not Found | The page or conversation you requested does not exist. |
+| 403 | Forbidden | You do not have permission to access this resource. |
+| 429 | Too Many Requests | You've made too many requests. Wait a moment and try again. |
+| 500 | Server Error | Something went wrong. Try again or contact support. |
 
-| Location | Current | New |
-|----------|---------|-----|
-| `web_conversation` 404 | `_render("partials/empty_state.html", status_code=404)` | `_render_error(404, ...)` for full-page requests; keep partial for HTMX |
-| `web_conversation` 403 | `_render("partials/empty_state.html", status_code=403)` | `_render_error(403, ...)` for full-page; partial for HTMX |
-| Rate limit 429s | `HTMLResponse("Rate limited", status_code=429)` | `_render_error(429, ...)` |
-
-### 6.6 HTMX vs full-page detection
-
-Check `HX-Request` header to distinguish HTMX partial requests from full-page loads:
+### 7.3 HTMX vs full-page detection
 
 ```python
 is_htmx = request.headers.get("HX-Request") == "true"
 if is_htmx:
-    return HTMLResponse('<div class="ui negative message"><p>Not found</p></div>', status_code=404)
+    return HTMLResponse('<div class="alert alert-error"><span>Not found</span></div>', status_code=404)
 else:
-    return _render_error(404, "Not Found", "The conversation does not exist.", "search", request=request)
+    return _render_error(404, "Not Found", "...", request=request)
 ```
 
-### 6.7 Global 500 handler
+### 7.4 Global 500 handler
 
-Add Starlette exception handler for unhandled errors:
-
-```python
-from starlette.exceptions import HTTPException
-
-async def http_exception_handler(request, exc):
-    if exc.status_code == 500:
-        return _render_error(500, "Server Error", "Something went wrong.", "exclamation triangle", request=request)
-    return _render_error(exc.status_code, str(exc.detail), "", "warning sign", request=request)
-```
+Starlette exception handler for unhandled errors, rendering `error.html` instead of default.
 
 ---
 
-## 7. Web UI: Thread View Enhancements
+## 8. Thread View Enhancements
 
-### 7.1 AI User Badge
+### 8.1 AI User Badge
 
-Add a visual badge next to message author names for AI/bot users. Identification: any user_id containing "claude", "gpt", "bot", or "ai-" prefix. Also check a new `is_ai` field on the users table (deferred to Sprint 5 agent identity work). For Sprint 3, use a heuristic function.
+Heuristic identification of AI users:
 
 ```python
-# web.py helper
 _AI_PATTERNS = {"claude", "gpt", "bot", "gemini", "copilot"}
 
 def _is_ai_user(user_id: str) -> bool:
@@ -346,134 +674,79 @@ def _is_ai_user(user_id: str) -> bool:
     return any(pat in lower for pat in _AI_PATTERNS) or lower.startswith("ai-")
 ```
 
-Template change in `thread_view.html`:
-```html
-<a class="author">{{ msg.from_user }}</a>
-{% if is_ai_user(msg.from_user) %}
-<span class="ui tiny blue label">AI</span>
-{% endif %}
-```
+Registered as Jinja2 global. Renders as `<span class="badge badge-info badge-xs">AI</span>` next to the author name in chat bubbles. Sprint 5 adds explicit `is_ai` DB field.
 
-Pass `is_ai_user` function to template context via Jinja2 globals.
+### 8.2 Mark-as-read on view
 
-### 7.2 Mark-as-read on view
+Already implemented (`web.py:262-264`). No changes needed.
 
-Already implemented in `web.py:262-264`. No changes needed. Verified: `advance_read_cursor` is called with `max_seq` when viewing a conversation.
+### 8.3 Markdown rendering
 
-### 7.3 Markdown rendering in thread view
-
-Add lightweight markdown rendering for message bodies using `mistune` (pure Python, no C dependencies).
+New module `src/ai_mailbox/markdown.py` using `mistune`:
 
 ```python
-# New: src/ai_mailbox/markdown.py
 import mistune
 
-_renderer = mistune.create_markdown(
-    escape=True,  # escape HTML in input
-    plugins=['strikethrough', 'table'],
-)
+_renderer = mistune.create_markdown(escape=True, plugins=['strikethrough', 'table'])
 
 def render_markdown(text: str) -> str:
     """Render markdown text to safe HTML."""
     return _renderer(text)
 ```
 
-Template change in `thread_view.html`:
-```html
-<!-- Before: -->
-<div class="text" style="white-space: pre-wrap;">{{ msg.body }}</div>
-
-<!-- After: -->
-<div class="text markdown-body">{{ msg.body | markdown }}</div>
-```
-
-Register `markdown` as a Jinja2 filter. Add minimal CSS for markdown output (code blocks, lists, headers within messages).
-
-**Scope limit:** Rendering only. The compose/reply forms stay as plain textarea. Users type markdown, it renders in the thread view.
+Registered as Jinja2 filter `markdown`. Used in thread view: `{{ msg.body | markdown }}`. The `escape=True` parameter prevents XSS. Output wrapped in DaisyUI `prose prose-sm` class for typography.
 
 ---
 
-## 8. Web UI: Compose Improvements
+## 9. Compose Improvements
 
-### 8.1 Current state
+### 9.1 Project selector
 
-The compose form (`compose_form.html`) already has:
-- Recipient search dropdown (Semantic UI search dropdown)
-- Project text input
-- Subject text input
-- Body textarea
+Native `<select>` dropdown populated from `get_distinct_projects(db, user_id)`. "general" always present. Users select from existing projects or can be extended with a custom input approach in future sprints.
 
-### 8.2 Project selector enhancement
+### 9.2 Character count
 
-Replace the free-text project input with a Semantic UI dropdown populated from known projects, with allowAdditions for new project names.
-
-```html
-<select name="project" class="ui search selection dropdown" id="project-selector">
-    <option value="general">general</option>
-    {% for project in projects %}
-    <option value="{{ project }}">{{ project }}</option>
-    {% endfor %}
-</select>
-```
-
-Initialize with `allowAdditions: true` so users can type new project names:
-```javascript
-$('#project-selector').dropdown({allowAdditions: true, forceSelection: false});
-```
-
-**Data source:** New query function `get_distinct_projects(db, user_id)` returns project names from the user's conversations.
-
-### 8.3 Character count on body
-
-Add a character count indicator below the body textarea showing current/max (e.g., "142 / 10,000"). Updates on keyup. Turns red when approaching the limit (> 9,000 chars).
-
-```html
-<div class="field">
-    <label>Message</label>
-    <textarea name="body" id="compose-body" rows="5" maxlength="10000" required>{{ form_body or '' }}</textarea>
-    <div class="ui small text" id="char-count" style="text-align: right; color: #999;">0 / 10,000</div>
-</div>
-```
+Vanilla JS `oninput` handler on body textarea. Shows `len / 10,000`. Text turns `text-error` (DaisyUI) above 9,000 chars. `maxlength="10000"` on the textarea for client-side enforcement.
 
 ---
 
-## 9. Edge Cases
+## 10. Edge Cases
 
-### 9.1 JWT validation with empty string
+### 10.1 JWT validation with empty string
 
-`MAILBOX_JWT_SECRET=""` results in empty string. Length check (< 32) catches this as a fatal error.
+`MAILBOX_JWT_SECRET=""` -- length check (< 32) catches as fatal.
 
-### 9.2 CORS with no env var set
+### 10.2 CORS with no env var set
 
-`MAILBOX_CORS_ORIGINS=""` (empty or unset): defaults to Railway URL + localhost only. Sufficient for current deployment.
+Defaults to Railway URL + localhost only.
 
-### 9.3 Token cleanup on empty tables
+### 10.3 Token cleanup on empty tables
 
-`DELETE FROM oauth_codes WHERE expires_at < ?` returns 0 rows on empty table. No error. Cleanup function handles this gracefully.
+DELETE returns 0, no error.
 
-### 9.4 Token cleanup concurrency
+### 10.4 Markdown XSS
 
-Single-process Railway deployment. No concurrent cleanup issues. If multiple processes run in the future, the DELETE is idempotent -- worst case, both processes delete 0 rows for the same expired token.
+`mistune.create_markdown(escape=True)` escapes HTML entities. `<script>` renders as literal text.
 
-### 9.5 Markdown XSS
+### 10.5 AI badge false positives
 
-`mistune.create_markdown(escape=True)` escapes HTML entities in input. User-supplied `<script>` tags render as literal text, not executable HTML. The `escape=True` parameter is the critical safety setting.
+User named "robotics-bob" matches "bot". Acceptable for Sprint 3. Sprint 5 adds authoritative `is_ai` field.
 
-### 9.6 AI badge false positives
+### 10.6 HTMX error page rendering
 
-A human user named "robotics-bob" would match the "bot" pattern. Acceptable for Sprint 3 heuristic. Sprint 5 adds explicit `is_ai` field on users table, which will be the authoritative source.
+`HX-Request` header detection prevents nested documents. HTMX gets inline alerts, direct navigation gets full error pages.
 
-### 9.7 HTMX error page rendering
+### 10.7 Tailwind CDN in production
 
-HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `<head>`) inside an HTMX target would nest documents. Solution: detect `HX-Request` header and return inline error messages for HTMX, full error pages for direct navigation.
+The Tailwind CDN play script (`cdn.tailwindcss.com`) is intended for development. For production, a build step with `tailwindcss` CLI would produce an optimized CSS file. Acceptable for alpha/staging -- track as tech debt for Sprint 6+ production hardening.
 
-### 9.8 Periodic cleanup on shutdown
+### 10.8 DaisyUI chat bubble direction
 
-`asyncio.create_task` for the cleanup loop. If the server shuts down, the task is cancelled automatically. No cleanup-in-progress protection needed -- the DELETE queries are atomic.
+`chat-end` (right-aligned) for current user's messages, `chat-start` (left-aligned) for others. The `msg.from_user == user_id` comparison determines direction.
 
 ---
 
-## 10. File Changes Summary
+## 11. File Changes Summary
 
 ### New files
 
@@ -481,11 +754,24 @@ HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `
 |---|---|
 | `src/ai_mailbox/token_cleanup.py` | Expired OAuth code/token cleanup |
 | `src/ai_mailbox/markdown.py` | Markdown rendering via mistune |
-| `src/ai_mailbox/templates/error.html` | Unified error page template |
+| `src/ai_mailbox/templates/error.html` | Unified error page template (DaisyUI) |
 | `tests/test_token_cleanup.py` | Token cleanup tests |
 | `tests/test_config_validation.py` | JWT secret and config validation tests |
 | `tests/test_markdown.py` | Markdown rendering + XSS safety tests |
 | `tests/test_error_pages.py` | Error page rendering tests (404, 403, 429, 500) |
+
+### Rewritten files (Semantic UI -> DaisyUI)
+
+| File | Changes |
+|---|---|
+| `src/ai_mailbox/templates/base.html` | Full rewrite: DaisyUI CDN, fantasy theme, navbar, remove jQuery + afterSwap handler |
+| `src/ai_mailbox/templates/login.html` | Full rewrite: DaisyUI card + form controls |
+| `src/ai_mailbox/templates/inbox.html` | Full rewrite: Tailwind grid layout, DaisyUI select filters |
+| `src/ai_mailbox/templates/health.html` | Full rewrite: DaisyUI card + table |
+| `src/ai_mailbox/templates/partials/thread_view.html` | Full rewrite: DaisyUI chat bubbles, AI badge, markdown rendering, vanilla JS |
+| `src/ai_mailbox/templates/partials/compose_form.html` | Full rewrite: DaisyUI form controls, project dropdown, char count |
+| `src/ai_mailbox/templates/partials/conversation_list.html` | Full rewrite: Tailwind layout, DaisyUI badges |
+| `src/ai_mailbox/templates/partials/empty_state.html` | Full rewrite: Tailwind centered layout, SVG icon |
 
 ### Modified files
 
@@ -496,17 +782,14 @@ HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `
 | `src/ai_mailbox/server.py` | Call `config.validate()`, use `get_cors_origins()`, start cleanup task, register `is_ai_user` as Jinja2 global, register `markdown` filter |
 | `src/ai_mailbox/web.py` | Add `_render_error()`, replace inline errors with error template, add HTMX detection, pass `projects` to compose template |
 | `src/ai_mailbox/db/queries.py` | Add `get_distinct_projects()` query |
-| `src/ai_mailbox/templates/base.html` | Add markdown CSS styles |
-| `src/ai_mailbox/templates/partials/thread_view.html` | AI badge, markdown rendering for message body |
-| `src/ai_mailbox/templates/partials/compose_form.html` | Project dropdown with allowAdditions, character count |
-| `tests/test_web.py` | Error page tests, compose project dropdown tests |
+| `tests/test_web.py` | Error page tests, compose project dropdown tests, DaisyUI class assertions |
 | `tests/test_queries.py` | get_distinct_projects tests |
 
 ### Deleted files
 
 | File | Reason |
 |---|---|
-| `src/ai_mailbox/auth.py` | Dead code -- legacy API key auth, not imported anywhere |
+| `src/ai_mailbox/auth.py` | Dead code -- legacy API key auth |
 
 ### Unchanged files
 
@@ -514,117 +797,111 @@ HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `
 |---|---|
 | `src/ai_mailbox/db/schema.py` | No DDL changes |
 | `src/ai_mailbox/db/migrations/*` | No new migrations |
-| `src/ai_mailbox/oauth.py` | Unchanged (cleanup runs externally) |
+| `src/ai_mailbox/oauth.py` | Unchanged |
 | `src/ai_mailbox/rate_limit.py` | Unchanged |
 | `src/ai_mailbox/group_tokens.py` | Unchanged |
 | `src/ai_mailbox/tools/*` | No MCP tool changes |
-| `Dockerfile` | No new system deps (mistune is pure Python) |
+| `Dockerfile` | No new system deps |
 | `railway.toml` | Unchanged |
 
 ---
 
-## 11. Acceptance Criteria
+## 12. Acceptance Criteria
 
-### 11.1 JWT Secret Validation (Issue #2)
+### 12.1 JWT Secret Validation (Issue #2)
 
 - [ ] Default secret + PostgreSQL `DATABASE_URL`: startup fails with `ConfigurationError`
 - [ ] Default secret + SQLite (no `DATABASE_URL`): startup succeeds with logged warning
 - [ ] Secret < 32 bytes: startup fails regardless of database
 - [ ] Valid custom secret >= 32 bytes: startup succeeds, no warning
-- [ ] `ConfigurationError` message includes remediation instructions
 
-### 11.2 CORS Restriction (Issue #3)
+### 12.2 CORS Restriction (Issue #3)
 
 - [ ] `MAILBOX_CORS_ORIGINS` unset: only Railway URL + localhost allowed
-- [ ] `MAILBOX_CORS_ORIGINS="https://example.com,https://other.com"`: those origins + Railway + localhost
-- [ ] Requests from unlisted origins receive no `Access-Control-Allow-Origin` header
+- [ ] `MAILBOX_CORS_ORIGINS` set: those origins + Railway + localhost
 - [ ] `allow_methods` restricted to GET, POST, OPTIONS
-- [ ] `allow_headers` restricted to Authorization, Content-Type
-- [ ] `allow_credentials` is True (for session cookies)
+- [ ] `allow_credentials` is True
 
-### 11.3 Token/Code Cleanup (Issue #1)
+### 12.3 Token/Code Cleanup (Issue #1)
 
-- [ ] `cleanup_expired_tokens()` deletes codes with `expires_at < now`
-- [ ] `cleanup_expired_tokens()` deletes tokens with `expires_at < now`
-- [ ] Non-expired records are preserved
-- [ ] Cleanup runs once on startup
-- [ ] Cleanup runs every 30 minutes via background task
-- [ ] `/web/health` includes `last_cleanup_at` and `next_cleanup_at`
-- [ ] Empty tables: cleanup returns `{codes_deleted: 0, tokens_deleted: 0}` without error
+- [ ] `cleanup_expired_tokens()` deletes expired codes and tokens
+- [ ] Non-expired records preserved
+- [ ] Runs on startup and every 30 minutes
+- [ ] `/web/health` includes cleanup timestamps
+- [ ] Empty tables: returns zero counts without error
 
-### 11.4 Dead Code Removal (Issue #16)
+### 12.4 Dead Code Removal (Issue #16)
 
 - [ ] `src/ai_mailbox/auth.py` deleted
 - [ ] `keith_api_key` and `amy_api_key` removed from Config
-- [ ] No import of `auth` module anywhere in codebase
 - [ ] Full test suite passes after deletion
 
-### 11.5 Error Pages
+### 12.5 DaisyUI Migration
 
-- [ ] 404: Navigating to `/web/conversation/nonexistent-id` renders error page with "Not Found" title and search icon
-- [ ] 403: Accessing a conversation the user is not part of renders error page with "Forbidden" title and lock icon
-- [ ] 429: Exceeding rate limit renders error page with "Too Many Requests" title
-- [ ] 500: Unhandled exception renders error page (not Starlette default)
-- [ ] All error pages include "Back to Inbox" link
-- [ ] HTMX requests receive inline error messages, not full pages
+- [ ] All templates use DaisyUI/Tailwind classes (no Semantic UI classes remain)
+- [ ] `data-theme="fantasy"` applied to `<html>` element
+- [ ] jQuery completely removed (no `<script>` tag, no `$()` calls)
+- [ ] Semantic UI CDN completely removed
+- [ ] DaisyUI CDN + Tailwind CDN loaded
+- [ ] HTMX stays functional (partial swaps, `hx-get`, `hx-post`, `hx-target`)
+- [ ] Navbar renders with neutral background and navigation links
+- [ ] Filter dropdowns use native `<select>` with HTMX triggers
+- [ ] No afterSwap JS re-initialization needed
 
-### 11.6 Thread View: AI Badge
+### 12.6 Error Pages
 
-- [ ] Messages from users matching AI patterns show blue "AI" label next to author name
-- [ ] Messages from regular users do not show the badge
-- [ ] Badge renders in both full-page and HTMX partial loads
+- [ ] 404: renders DaisyUI card with error code, title, message, "Back to Inbox" link
+- [ ] 403: renders with "Forbidden" title
+- [ ] 429: renders with "Too Many Requests" title
+- [ ] 500: renders error page (not Starlette default)
+- [ ] HTMX requests receive inline `alert` elements, not full pages
 
-### 11.7 Thread View: Markdown Rendering
+### 12.7 Thread View
 
-- [ ] Message body with `**bold**` renders as bold text
-- [ ] Message body with `- list item` renders as a list
-- [ ] Message body with `` `code` `` renders as inline code
-- [ ] Message body with `<script>alert('xss')</script>` renders as escaped text (not executed)
-- [ ] Plain text messages (no markdown) render correctly (no broken formatting)
+- [ ] Messages render as DaisyUI chat bubbles
+- [ ] Current user's messages right-aligned (`chat-end`), others left-aligned (`chat-start`)
+- [ ] AI users show `badge badge-info` "AI" label next to name
+- [ ] Message bodies render markdown (bold, lists, code, tables)
+- [ ] XSS in message body renders as escaped text
+- [ ] Reply form uses DaisyUI `textarea` + `btn` components
 
-### 11.8 Compose: Project Selector
+### 12.8 Compose
 
-- [ ] Project field is a dropdown populated from user's existing projects
-- [ ] Dropdown allows typing new project names (allowAdditions)
-- [ ] "general" is always present as an option
-- [ ] Selected project is preserved on form validation errors
+- [ ] Recipient selector is DaisyUI `select` with all users
+- [ ] Project selector populated from user's existing projects
+- [ ] Character count updates on keystroke, turns red > 9,000 chars
+- [ ] Form validation errors render as DaisyUI `alert-error`
+- [ ] Successful send shows DaisyUI `alert-success`
 
-### 11.9 Compose: Character Count
+### 12.9 AI UX UAT (browser verification -- required gate)
 
-- [ ] Character count displays below body textarea
-- [ ] Count updates on each keystroke
-- [ ] Count turns red when body exceeds 9,000 characters
-- [ ] Body textarea has maxlength="10000"
+- [ ] **Login flow:** Login page renders with DaisyUI card, credentials work, redirects to inbox
+- [ ] **Inbox:** Two-panel layout, sidebar with filter dropdowns, conversations with badges
+- [ ] **Thread view:** Chat bubbles with correct alignment, AI badges visible, markdown rendered
+- [ ] **Compose:** Project dropdown populated, character count functional, send works
+- [ ] **Error pages:** Navigate to invalid URL, verify 404 error page renders with DaisyUI styling
+- [ ] **Theme:** Fantasy theme colors visible (purple primary, warm accents)
+- [ ] **No jQuery:** Browser console shows no jQuery-related errors
 
-### 11.10 AI UX UAT (browser verification -- required gate)
-
-- [ ] **Login flow:** Navigate to login page, enter credentials, verify redirect to inbox
-- [ ] **Thread view:** Click a conversation, verify messages render with markdown, AI badges visible on AI user messages
-- [ ] **Compose flow:** Click Compose, verify project dropdown works with autocomplete, send a message, verify it appears in thread
-- [ ] **Error pages:** Navigate to invalid conversation URL, verify 404 error page renders
-- [ ] **Rate limit error:** Trigger rate limit, verify 429 error page renders
-- [ ] **Character count:** Type in compose body, verify count updates
-
-### 11.11 Tests
+### 12.10 Tests
 
 - [ ] test_config_validation.py: default secret detection, length check, production vs dev, CORS origins
 - [ ] test_token_cleanup.py: expired deletion, non-expired preservation, empty table, counts
 - [ ] test_markdown.py: rendering, XSS escape, plain text passthrough
-- [ ] test_error_pages.py: 404/403/429/500 rendering, HTMX vs full-page, "Back to Inbox" link
-- [ ] test_web.py additions: compose project dropdown, character count
+- [ ] test_error_pages.py: 404/403/429/500 rendering, HTMX vs full-page
+- [ ] test_web.py additions: DaisyUI class presence in rendered HTML, compose improvements
 - [ ] test_queries.py additions: get_distinct_projects
 - [ ] Total test count >= 320 (up from 287)
 
-### 11.12 Deployment
+### 12.11 Deployment
 
 - [ ] MVP 1 Staging deploys and passes health check
 - [ ] Health endpoint shows cleanup stats
-- [ ] CORS restricted (verify via browser DevTools or curl)
-- [ ] JWT validation prevents startup with default secret on staging (secret must be set in Railway env vars)
-- [ ] Error pages render on deployed environment
+- [ ] CORS restricted
+- [ ] All pages render with DaisyUI fantasy theme
 - [ ] AI UX UAT passed on deployed environment
 
-### 11.13 GitHub
+### 12.12 GitHub
 
 - [ ] Issue #1 (token cleanup) closed with commit reference
 - [ ] Issue #2 (JWT validation) closed with commit reference
@@ -633,20 +910,20 @@ HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `
 
 ---
 
-## 12. Implementation Order (TDD Through Delivery)
+## 13. Implementation Order (TDD Through Delivery)
 
-1. **Config validation + ConfigurationError** -- `config.py` changes + `test_config_validation.py`
+1. **Config validation + CORS** -- `config.py` changes + `test_config_validation.py`
    - RED: tests for default secret detection (dev vs prod), length check, CORS origin parsing
-   - GREEN: implement `validate()`, `get_cors_origins()`, `ConfigurationError`
+   - GREEN: implement `validate()`, `get_cors_origins()`, `ConfigurationError`, `allowed_origins`
    - VERIFY: tests pass locally
 
 2. **Token cleanup** -- `token_cleanup.py` + `test_token_cleanup.py`
-   - RED: tests for expired code deletion, expired token deletion, non-expired preservation, empty tables
+   - RED: tests for expired code/token deletion, non-expired preservation, empty tables
    - GREEN: implement `cleanup_expired_tokens()`
    - VERIFY: tests pass locally
 
 3. **Remove dead code** -- delete `auth.py`, remove API key config fields
-   - RED: verify no imports break (grep for `from ai_mailbox.auth` and `import auth`)
+   - RED: verify no imports break
    - GREEN: delete file, remove config fields
    - VERIFY: full test suite passes
 
@@ -655,47 +932,42 @@ HTMX requests expect partial HTML. Returning a full error page (with `<html>`, `
    - GREEN: implement renderer with mistune
    - VERIFY: tests pass locally
 
-5. **Error page template + helper** -- `error.html` + `test_error_pages.py`
-   - RED: tests for 404/403/429/500 rendering, HTMX detection, error content
-   - GREEN: implement `error.html` template, `_render_error()` helper, replace inline errors in `web.py`
+5. **DaisyUI template migration** -- rewrite all 8 templates + `error.html`
+   - RED: tests for DaisyUI class presence in rendered HTML, no Semantic UI classes, no jQuery, error page content
+   - GREEN: rewrite `base.html`, `login.html`, `inbox.html`, `health.html`, all partials, new `error.html`
    - VERIFY: tests pass locally
 
-6. **Thread view enhancements** -- AI badge + markdown filter
-   - RED: tests for AI badge rendering, markdown filter in template output
-   - GREEN: implement `is_ai_user()`, register Jinja2 filter/global, update `thread_view.html`
+6. **Web route updates** -- error handling, HTMX detection, compose improvements
+   - RED: tests for `_render_error()`, HTMX detection, project dropdown data, character count HTML
+   - GREEN: update `web.py`, add `get_distinct_projects` query, wire `is_ai_user` + `markdown` filter
    - VERIFY: tests pass locally
 
-7. **Compose improvements** -- project dropdown + char count + `get_distinct_projects` query
-   - RED: tests for project dropdown options, get_distinct_projects query, char count in HTML
-   - GREEN: implement query, update `compose_form.html`, update web route to pass projects
-   - VERIFY: tests pass locally
-
-8. **Server integration** -- wire validation, CORS, cleanup task, Jinja2 extensions
+7. **Server integration** -- wire validation, CORS, cleanup task, Jinja2 extensions
    - RED: integration tests for startup validation, CORS headers, cleanup scheduling
    - GREEN: update `server.py` with all Sprint 3 wiring
    - VERIFY: full local test suite green (all tests, zero failures)
 
-9. **Deploy to MVP 1 Staging**
+8. **Deploy to MVP 1 Staging**
    - VERIFY:
      - `/web/health` returns healthy with cleanup stats
-     - CORS restricted (test with curl from disallowed origin)
-     - Error pages render on navigation errors
-     - Markdown renders in thread view
+     - All pages render with DaisyUI fantasy theme
+     - CORS restricted
+     - Error pages render
 
-10. **AI UX UAT** (required gate)
-    - Browser verification of all section 11.10 checks
-    - Failures block sprint completion
+9. **AI UX UAT** (required gate)
+   - Browser verification of all section 12.9 checks
+   - Failures block sprint completion
 
-11. **Human UAT** (required gate)
-    - User verifies error pages, thread view, compose improvements, security config
+10. **Human UAT** (required gate)
+    - User verifies DaisyUI design quality, error pages, thread view, compose
     - Sprint not complete until passed
 
-12. **GitHub cleanup**
+11. **GitHub cleanup**
     - Close #1, #2, #3, #16 with commit references
 
 ---
 
-## 13. Dependency Addition
+## 14. Dependency Changes
 
 ```toml
 # pyproject.toml
@@ -705,22 +977,28 @@ dependencies = [
 ]
 ```
 
-`mistune` is pure Python, no C extensions, no system dependencies. Compatible with Python 3.13.
+No DaisyUI or Tailwind Python dependencies -- both are CDN-only.
 
 ---
 
-## 14. Resolved Design Decisions
+## 15. Resolved Design Decisions
 
-1. **Single error template vs per-code templates.** One `error.html` template with context variables. Avoids file proliferation for what is essentially the same layout with different text/icons.
+1. **DaisyUI fantasy theme over Semantic UI.** User evaluated alternatives and selected DaisyUI with `fantasy` theme. Semantic UI 2.5.0 is unmaintained (2018) and produces dated UI. DaisyUI is actively maintained, provides 32 themes, and its pure-CSS components eliminate the jQuery re-initialization bug class entirely.
 
-2. **JWT validation: warn vs fail.** Fail on production (PostgreSQL), warn on dev (SQLite). This prevents accidental deployment with default secret while keeping local development frictionless.
+2. **jQuery removal.** DaisyUI components are pure CSS. HTMX handles all dynamic behavior. No JavaScript framework needed. Filter dropdowns use native `<select>` with HTMX triggers instead of Semantic UI's jQuery-dependent dropdown widget.
 
-3. **CORS: config-driven vs hardcoded.** Environment variable for flexibility. Defaults are conservative (Railway URL + localhost only). Adding origins doesn't require code changes.
+3. **Chat bubbles for messages.** DaisyUI's `chat` component with `chat-start`/`chat-end` alignment provides a modern messaging UX (similar to iMessage/WhatsApp). Better than the flat comment list in Semantic UI.
 
-4. **Cleanup: cron job vs in-process.** In-process asyncio task. Railway doesn't have native cron. External cron (Railway cron jobs) would add operational complexity for a simple prune query. If the process restarts, cleanup runs on startup anyway.
+4. **Tailwind CDN for now.** The play CDN (`cdn.tailwindcss.com`) is not recommended for production but is acceptable for alpha/staging. Production hardening (Sprint 6+) would add a `tailwindcss` build step for optimized CSS. Tracked as edge case 10.7.
 
-5. **Markdown: mistune vs markdown vs commonmark.** `mistune` is the lightest pure-Python option (~2000 lines, no dependencies). The `markdown` library has optional C extensions. `commonmark` is heavier. For rendering message bodies, mistune is sufficient.
+5. **Native `<select>` for dropdowns.** Instead of DaisyUI's `<details>`-based dropdown (which has accessibility issues), use native `<select>` elements styled with DaisyUI classes. Works with HTMX out of the box, no JS initialization, accessible by default.
 
-6. **AI badge: heuristic vs database field.** Heuristic for Sprint 3 (pattern matching on user_id). Sprint 5 adds `user_type` field and `is_ai` tracking per the roadmap. The heuristic is a temporary bridge.
+6. **Single error template.** One `error.html` with context variables. Error code displayed as large number, title, message, and "Back to Inbox" button. Consistent across all error types.
 
-7. **Project selector: dropdown vs free text.** Dropdown with `allowAdditions` combines discoverability (see existing projects) with flexibility (create new ones). Better UX than plain text input.
+7. **JWT validation: warn vs fail.** Fail on production (PostgreSQL), warn on dev (SQLite).
+
+8. **Cleanup: in-process asyncio.** Railway doesn't have native cron. In-process task is simplest.
+
+9. **Markdown: mistune.** Lightest pure-Python option. `escape=True` for XSS safety.
+
+10. **AI badge: heuristic.** Pattern matching for Sprint 3. DB field in Sprint 5.

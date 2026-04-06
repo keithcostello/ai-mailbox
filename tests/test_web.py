@@ -129,17 +129,17 @@ class TestLoginPage:
         assert "username" in resp.text.lower()
         assert "password" in resp.text.lower()
 
-    def test_login_page_has_semantic_ui(self, client):
+    def test_login_page_has_daisyui(self, client):
         resp = client.get("/web/login")
-        assert "semantic" in resp.text.lower()
+        assert "daisyui" in resp.text.lower()
 
-    def test_login_page_no_tailwind(self, client):
+    def test_login_page_has_tailwind(self, client):
         resp = client.get("/web/login")
-        assert "tailwindcss" not in resp.text
+        assert "tailwindcss" in resp.text
 
-    def test_login_page_has_jquery(self, client):
+    def test_login_page_no_jquery(self, client):
         resp = client.get("/web/login")
-        assert "jquery" in resp.text.lower()
+        assert "jquery" not in resp.text.lower()
 
     def test_login_page_has_htmx(self, client):
         resp = client.get("/web/login")
@@ -212,8 +212,8 @@ class TestInboxPage:
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
-        assert 'id="sidebar"' in resp.text
         assert 'id="conversation-list"' in resp.text
+        assert 'id="project-filter"' in resp.text
 
     def test_inbox_has_main_content(self, client):
         token = _make_session_cookie("keith")
@@ -607,12 +607,12 @@ class TestFilterDropdowns:
     """Filter dropdowns must be clearable and sidebar refresh must preserve filters."""
 
     def test_inbox_has_clear_filters_link(self, client):
-        """Inbox should have a clear-filters link and clearable dropdown init."""
+        """Inbox should have a clear-filters link."""
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
-        assert "clear-filters" in resp.text
-        assert "clearable" in resp.text
+        assert "clearFilters" in resp.text
+        assert "Clear filters" in resp.text
 
     def test_thread_view_sidebar_refresh_reads_filters(self, client, web_db):
         """Thread view should NOT hardcode a bare /web/inbox/conversations hx-get.
