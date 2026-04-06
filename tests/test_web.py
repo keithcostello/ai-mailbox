@@ -257,8 +257,129 @@ class TestHealthPage:
 
     def test_health_page_shows_version(self, client):
         resp = client.get("/web/health")
-        assert "0.3.0" in resp.text
+        assert "0.4.0" in resp.text
 
     def test_health_page_shows_user_count(self, client):
         resp = client.get("/web/health")
         assert "2" in resp.text  # keith + amy
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Login rate limiting
+# ---------------------------------------------------------------------------
+
+class TestLoginRateLimit:
+    """POST /web/login rate limited to 5/minute per IP."""
+
+    def test_rate_limit_after_5_attempts(self, client):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+        for _ in range(5):
+            client.post("/web/login", data={"username": "x", "password": "y"})
+        resp = client.post("/web/login", data={"username": "x", "password": "y"})
+        assert resp.status_code == 429
+        assert "too many" in resp.text.lower()
+
+    def test_rate_limit_shows_on_login_page(self, client):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+        for _ in range(5):
+            client.post("/web/login", data={"username": "x", "password": "y"})
+        resp = client.post("/web/login", data={"username": "x", "password": "y"})
+        assert "login" in resp.text.lower()  # Still renders the login template
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Inbox pagination
+# ---------------------------------------------------------------------------
+
+class TestInboxPagination:
+    """GET /web/inbox supports page query parameter."""
+
+    def _seed_conversations(self, web_db, count):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        for i in range(count):
+            conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", f"proj-{i:03d}")
+            insert_message(web_db, conv_id, "amy", f"Message in proj-{i:03d}")
+
+    def test_pagination_links_absent_for_small_inbox(self, client, web_db):
+        self._seed_conversations(web_db, 3)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert resp.status_code == 200
+        assert "Next" not in resp.text
+        assert "Previous" not in resp.text
+
+    def test_next_link_when_more_exist(self, client, web_db):
+        self._seed_conversations(web_db, 25)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "Next" in resp.text
+        assert "page=2" in resp.text
+
+    def test_previous_link_on_page_2(self, client, web_db):
+        self._seed_conversations(web_db, 25)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox?page=2")
+        assert "Previous" in resp.text
+        assert "page=1" in resp.text
+
+    def test_page_number_displayed(self, client, web_db):
+        self._seed_conversations(web_db, 3)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "Page 1" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Inbox real data rendering
+# ---------------------------------------------------------------------------
+
+class TestInboxRealData:
+    """Inbox displays real conversation data with unread badges."""
+
+    def test_shows_unread_badge(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
+        insert_message(web_db, conv_id, "amy", "Unread message 1")
+        insert_message(web_db, conv_id, "amy", "Unread message 2")
+
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        # Should show unread count badge with "2"
+        assert "2" in resp.text
+
+    def test_shows_project_tag(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "deployment")
+        insert_message(web_db, conv_id, "amy", "Deploy ready")
+
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "#deployment" in resp.text
+
+    def test_shows_conversation_type_badge(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
+        insert_message(web_db, conv_id, "amy", "Direct msg")
+
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "DM" in resp.text
+
+    def test_shows_last_message_sender(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
+        insert_message(web_db, conv_id, "amy", "Latest from amy")
+
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "amy:" in resp.text.lower()

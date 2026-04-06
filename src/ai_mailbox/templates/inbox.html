@@ -20,27 +20,51 @@
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-medium text-gray-900 truncate">
-                            {{ conv.participants | join(', ') }}
+                            {% set display_names = conv.participants[:3] | join(', ') %}
+                            {{ display_names }}
+                            {% if conv.participants | length > 3 %}
+                            <span class="text-gray-400">+{{ conv.participants | length - 3 }} more</span>
+                            {% endif %}
                         </span>
                         {% if conv.project %}
                         <span class="text-xs text-gray-500">#{{ conv.project }}</span>
                         {% endif %}
                     </div>
-                    <p class="text-sm text-gray-500 truncate">{{ conv.last_message_preview }}</p>
+                    <p class="text-sm text-gray-500 truncate">
+                        {% if conv.last_message_from %}<span class="font-medium">{{ conv.last_message_from }}:</span> {% endif %}{{ conv.last_message_preview }}
+                    </p>
                 </div>
             </div>
             <div class="flex items-center gap-3 flex-shrink-0 ml-4">
                 {% if conv.unread_count > 0 %}
-                <span class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+                <span class="inline-flex items-center justify-center px-2 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
                     {{ conv.unread_count }}
                 </span>
                 {% endif %}
-                <span class="text-xs text-gray-400">{{ conv.last_message_at[:10] if conv.last_message_at else '' }}</span>
+                <span class="text-xs text-gray-400 whitespace-nowrap">{{ conv.last_message_at | relative_time }}</span>
             </div>
         </div>
     </div>
     {% endfor %}
 </div>
+
+{# Pagination #}
+<div class="flex justify-between items-center mt-4">
+    {% if has_previous %}
+    <a href="/web/inbox?page={{ page - 1 }}" class="text-sm text-blue-600 hover:text-blue-800">Previous</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+
+    <span class="text-sm text-gray-500">Page {{ page }}</span>
+
+    {% if has_more %}
+    <a href="/web/inbox?page={{ page + 1 }}" class="text-sm text-blue-600 hover:text-blue-800">Next</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+</div>
+
 {% else %}
 <div class="bg-white shadow rounded-lg p-12 text-center">
     <p class="text-gray-500 text-lg">No conversations yet</p>

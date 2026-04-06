@@ -11,6 +11,15 @@ ERROR_CODES: dict[str, dict] = {
     "DUPLICATE_MESSAGE":      {"retryable": False},
     "SEQUENCE_CONFLICT":      {"retryable": True},
     "INTERNAL_ERROR":         {"retryable": True},
+    # Sprint 2
+    "RATE_LIMITED":           {"retryable": True},
+    "BODY_TOO_LONG":          {"retryable": False},
+    "GROUP_TOO_LARGE":        {"retryable": False},
+    "INVALID_PARAMETER":      {"retryable": False},
+    "MISSING_PARAMETER":      {"retryable": False},
+    "GROUP_CONFIRMATION_REQUIRED": {"retryable": False},
+    "GROUP_TOKEN_EXPIRED":    {"retryable": False},
+    "GROUP_TOKEN_INVALID":    {"retryable": False},
 }
 
 

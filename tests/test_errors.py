@@ -36,10 +36,19 @@ class TestMakeError:
             "RECIPIENT_NOT_FOUND", "MESSAGE_NOT_FOUND",
             "CONVERSATION_NOT_FOUND", "PERMISSION_DENIED",
             "DUPLICATE_MESSAGE",
+            # Sprint 2
+            "BODY_TOO_LONG", "GROUP_TOO_LARGE",
+            "INVALID_PARAMETER", "MISSING_PARAMETER",
+            "GROUP_CONFIRMATION_REQUIRED", "GROUP_TOKEN_EXPIRED",
+            "GROUP_TOKEN_INVALID",
         ]
         for code in non_retryable:
             result = make_error(code, "test")
             assert result["error"]["retryable"] is False, f"{code} should not be retryable"
+
+    def test_rate_limited_is_retryable(self):
+        result = make_error("RATE_LIMITED", "rate limit exceeded")
+        assert result["error"]["retryable"] is True
 
     def test_param_omitted_when_none(self):
         result = make_error("INTERNAL_ERROR", "boom")
@@ -84,6 +93,11 @@ class TestErrorCodeRegistry:
             "RECIPIENT_NOT_FOUND", "MESSAGE_NOT_FOUND",
             "CONVERSATION_NOT_FOUND", "PERMISSION_DENIED",
             "DUPLICATE_MESSAGE", "SEQUENCE_CONFLICT", "INTERNAL_ERROR",
+            # Sprint 2 additions
+            "RATE_LIMITED", "BODY_TOO_LONG", "GROUP_TOO_LARGE",
+            "INVALID_PARAMETER", "MISSING_PARAMETER",
+            "GROUP_CONFIRMATION_REQUIRED", "GROUP_TOKEN_EXPIRED",
+            "GROUP_TOKEN_INVALID",
         }
         assert set(ERROR_CODES.keys()) == expected
 

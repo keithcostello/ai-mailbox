@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ai_mailbox.config import MAX_BODY_LENGTH
 from ai_mailbox.db.queries import (
     get_conversation,
     get_conversation_participants,
@@ -22,10 +23,19 @@ def tool_reply_to_message(
     user_id: str,
     message_id: str,
     body: str,
+    content_type: str = "text/plain",
+    idempotency_key: str | None = None,
 ) -> dict:
     """Reply to a message. Any participant in the conversation can reply."""
     if not body.strip():
         return make_error("EMPTY_BODY", "Message body cannot be empty", param="body")
+
+    if len(body) > MAX_BODY_LENGTH:
+        return make_error(
+            "BODY_TOO_LONG",
+            f"Body exceeds {MAX_BODY_LENGTH} characters ({len(body)} given)",
+            param="body",
+        )
 
     original = get_message(db, message_id)
     if original is None:
@@ -42,6 +52,8 @@ def tool_reply_to_message(
         db, conv_id, user_id, body,
         subject=original.get("subject"),
         reply_to=message_id,
+        content_type=content_type,
+        idempotency_key=idempotency_key,
     )
 
     if is_error(result):
@@ -53,6 +65,7 @@ def tool_reply_to_message(
 
     return {
         "message_id": result["id"],
+        "conversation_id": conv_id,
         "from_user": user_id,
         "to_user": to_user,
         "project": conv["project"] if conv else "general",

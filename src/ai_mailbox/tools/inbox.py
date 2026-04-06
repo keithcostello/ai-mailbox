@@ -36,9 +36,9 @@ def tool_check_messages(
         other_users = [p for p in participants if p != user_id]
 
         if unread_only:
-            msgs = get_conversation_messages(db, conv_id, after_sequence=last_read)
+            msgs, _ = get_conversation_messages(db, conv_id, after_sequence=last_read)
         else:
-            msgs = get_conversation_messages(db, conv_id)
+            msgs, _ = get_conversation_messages(db, conv_id)
 
         # Enrich messages with backward-compat fields
         max_seq = last_read

@@ -262,3 +262,184 @@ class TestScenarioE:
         for result in errors:
             assert is_error(result)
             assert result["error"]["retryable"] is False
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Enhanced send_message
+# ---------------------------------------------------------------------------
+
+class TestSendMessageEnhanced:
+    """Sprint 2 enhancements to send_message."""
+
+    def test_body_too_long(self, db):
+        result = tool_send_message(db, user_id="keith", to="amy", body="x" * 10_001)
+        assert is_error(result)
+        assert result["error"]["code"] == "BODY_TOO_LONG"
+        assert result["error"]["param"] == "body"
+
+    def test_body_at_limit_succeeds(self, db):
+        result = tool_send_message(db, user_id="keith", to="amy", body="x" * 10_000)
+        assert not is_error(result)
+        assert "message_id" in result
+
+    def test_content_type_stored(self, db):
+        result = tool_send_message(
+            db, user_id="keith", to="amy", body="json data",
+            content_type="application/json",
+        )
+        assert not is_error(result)
+        from ai_mailbox.db.queries import get_message
+        msg = get_message(db, result["message_id"])
+        assert msg["content_type"] == "application/json"
+
+    def test_idempotency_key_prevents_duplicate(self, db):
+        r1 = tool_send_message(
+            db, user_id="keith", to="amy", body="hello",
+            idempotency_key="key-1",
+        )
+        assert not is_error(r1)
+        r2 = tool_send_message(
+            db, user_id="keith", to="amy", body="hello",
+            idempotency_key="key-1",
+        )
+        assert is_error(r2)
+        assert r2["error"]["code"] == "DUPLICATE_MESSAGE"
+
+    def test_to_array_returns_confirmation_required(self, db):
+        """Sending to a group without token returns confirmation payload."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        result = tool_send_message(
+            db, user_id="keith", to=["amy", "bob"], body="group msg",
+        )
+        # Should return confirmation payload (not error, not success)
+        assert "confirmation_required" in result
+        assert result["confirmation_required"] is True
+        assert "group_send_token" in result
+
+    def test_to_array_with_valid_token_sends(self, db):
+        """Sending to a group with valid token succeeds."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        # First call: get token
+        r1 = tool_send_message(
+            db, user_id="keith", to=["amy", "bob"], body="group msg",
+        )
+        token = r1["group_send_token"]
+        # Second call: send with token
+        r2 = tool_send_message(
+            db, user_id="keith", to=["amy", "bob"], body="group msg",
+            group_send_token=token,
+        )
+        assert not is_error(r2)
+        assert "message_id" in r2
+        assert set(r2["to_users"]) == {"amy", "bob"}
+
+    def test_to_single_element_list_is_direct(self, db):
+        result = tool_send_message(db, user_id="keith", to=["amy"], body="direct")
+        assert not is_error(result)
+        assert result["to_user"] == "amy"
+
+    def test_conversation_id_direct_no_token_needed(self, db):
+        """Sending to existing direct conversation via conversation_id works without token."""
+        from ai_mailbox.db.queries import find_or_create_direct_conversation
+        conv_id = find_or_create_direct_conversation(db, "keith", "amy", "general")
+        result = tool_send_message(
+            db, user_id="keith", body="via conv_id",
+            conversation_id=conv_id,
+        )
+        assert not is_error(result)
+        assert "message_id" in result
+
+    def test_conversation_id_group_requires_token(self, db):
+        """Sending to group conversation via conversation_id requires token."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        from ai_mailbox.db.queries import find_or_create_group_by_members
+        conv_id, _ = find_or_create_group_by_members(db, "keith", ["amy", "bob"], "general")
+        result = tool_send_message(
+            db, user_id="keith", body="group via conv_id",
+            conversation_id=conv_id,
+        )
+        assert "confirmation_required" in result
+
+    def test_missing_to_and_conversation_id(self, db):
+        result = tool_send_message(db, user_id="keith", body="hello")
+        assert is_error(result)
+        assert result["error"]["code"] == "MISSING_PARAMETER"
+
+    def test_response_includes_to_users_list(self, db):
+        result = tool_send_message(db, user_id="keith", to="amy", body="hi")
+        assert result["to_users"] == ["amy"]
+
+    def test_to_array_deduplicates(self, db):
+        """Duplicate recipients are silently removed."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        result = tool_send_message(
+            db, user_id="keith", to=["amy", "amy", "bob"], body="dedup test",
+        )
+        assert "confirmation_required" in result
+        assert len(result["group"]["participants"]) == 3  # keith, amy, bob
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Enhanced reply_to_message
+# ---------------------------------------------------------------------------
+
+class TestReplyEnhanced:
+    """Sprint 2 enhancements to reply_to_message."""
+
+    def test_body_too_long(self, db):
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body="x" * 10_001,
+        )
+        assert is_error(result)
+        assert result["error"]["code"] == "BODY_TOO_LONG"
+
+    def test_content_type_on_reply(self, db):
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body='{"status": "ok"}', content_type="application/json",
+        )
+        assert not is_error(result)
+        from ai_mailbox.db.queries import get_message
+        msg = get_message(db, result["message_id"])
+        assert msg["content_type"] == "application/json"
+
+    def test_idempotency_key_on_reply(self, db):
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body="reply", idempotency_key="reply-key-1",
+        )
+        assert not is_error(result)
+        # Duplicate should fail
+        dup = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body="reply", idempotency_key="reply-key-1",
+        )
+        assert is_error(dup)
+        assert dup["error"]["code"] == "DUPLICATE_MESSAGE"
+
+    def test_response_includes_conversation_id(self, db):
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"], body="reply",
+        )
+        assert "conversation_id" in result

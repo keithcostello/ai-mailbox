@@ -3,6 +3,9 @@
 import os
 from dataclasses import dataclass
 
+MAX_BODY_LENGTH = 10_000
+MAX_GROUP_SIZE = 50
+
 
 @dataclass
 class Config:

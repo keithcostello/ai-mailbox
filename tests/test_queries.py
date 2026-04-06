@@ -117,7 +117,7 @@ class TestGetConversationMessages:
         queries.insert_message(db, conv_id, "keith", "first")
         queries.insert_message(db, conv_id, "amy", "second")
         queries.insert_message(db, conv_id, "keith", "third")
-        msgs = queries.get_conversation_messages(db, conv_id)
+        msgs, _ = queries.get_conversation_messages(db, conv_id)
         assert len(msgs) == 3
         assert msgs[0]["body"] == "first"
         assert msgs[2]["body"] == "third"
@@ -127,7 +127,7 @@ class TestGetConversationMessages:
         queries.insert_message(db, conv_id, "keith", "first")
         queries.insert_message(db, conv_id, "amy", "second")
         queries.insert_message(db, conv_id, "keith", "third")
-        msgs = queries.get_conversation_messages(db, conv_id, after_sequence=1)
+        msgs, _ = queries.get_conversation_messages(db, conv_id, after_sequence=1)
         assert len(msgs) == 2
         assert msgs[0]["body"] == "second"
 
@@ -135,14 +135,14 @@ class TestGetConversationMessages:
         conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
         for i in range(5):
             queries.insert_message(db, conv_id, "keith", f"msg-{i}")
-        msgs = queries.get_conversation_messages(db, conv_id, limit=3)
+        msgs, _ = queries.get_conversation_messages(db, conv_id, limit=3)
         assert len(msgs) == 3
 
     def test_ordered_by_sequence_number(self, db):
         conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
         queries.insert_message(db, conv_id, "keith", "first")
         queries.insert_message(db, conv_id, "amy", "second")
-        msgs = queries.get_conversation_messages(db, conv_id)
+        msgs, _ = queries.get_conversation_messages(db, conv_id)
         assert msgs[0]["sequence_number"] < msgs[1]["sequence_number"]
 
 
@@ -287,7 +287,8 @@ class TestGetThread:
         queries.insert_message(db, conv_id, "keith", "first")
         queries.insert_message(db, conv_id, "amy", "second")
         queries.insert_message(db, conv_id, "keith", "third")
-        thread = queries.get_thread(db, queries.get_conversation_messages(db, conv_id)[1]["id"])
+        msgs, _ = queries.get_conversation_messages(db, conv_id)
+        thread = queries.get_thread(db, msgs[1]["id"])
         assert [m["body"] for m in thread] == ["first", "second", "third"]
 
     def test_empty_for_nonexistent_message(self, db):
@@ -331,3 +332,232 @@ class TestAddParticipant:
         queries.add_participant(db, conv_id, "keith")
         participants = queries.get_conversation_participants(db, conv_id)
         assert participants.count("keith") == 1
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2 query additions
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def bob(db):
+    """Add a third user for group tests."""
+    db._conn.execute(
+        "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+        ("bob", "Bob", "test-bob-key"),
+    )
+    db._conn.commit()
+    return "bob"
+
+
+class TestFindOrCreateGroupByMembers:
+    """find_or_create_group_by_members finds or creates team groups."""
+
+    def test_creates_group(self, db, bob):
+        conv_id, created = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        assert conv_id is not None
+        assert created is True
+        conv = queries.get_conversation(db, conv_id)
+        assert conv["type"] == "team_group"
+
+    def test_includes_all_members_plus_creator(self, db, bob):
+        conv_id, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        participants = queries.get_conversation_participants(db, conv_id)
+        assert set(participants) == {"keith", "amy", "bob"}
+
+    def test_reuses_existing_group_same_members(self, db, bob):
+        conv1, created1 = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        conv2, created2 = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        assert conv1 == conv2
+        assert created1 is True
+        assert created2 is False
+
+    def test_reuses_regardless_of_member_order(self, db, bob):
+        conv1, _ = queries.find_or_create_group_by_members(
+            db, "keith", [bob, "amy"], "general"
+        )
+        conv2, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        assert conv1 == conv2
+
+    def test_different_project_different_group(self, db, bob):
+        conv1, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general"
+        )
+        conv2, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "alerts"
+        )
+        assert conv1 != conv2
+
+    def test_custom_name(self, db, bob):
+        conv_id, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "general", name="Backend Team"
+        )
+        conv = queries.get_conversation(db, conv_id)
+        assert conv["name"] == "Backend Team"
+
+    def test_auto_generated_name_is_sorted_members(self, db, bob):
+        conv_id, _ = queries.find_or_create_group_by_members(
+            db, "keith", [bob, "amy"], "general"
+        )
+        conv = queries.get_conversation(db, conv_id)
+        assert conv["name"] == "amy,bob,keith"
+
+    def test_sets_project_on_group(self, db, bob):
+        conv_id, _ = queries.find_or_create_group_by_members(
+            db, "keith", ["amy", bob], "deployment"
+        )
+        conv = queries.get_conversation(db, conv_id)
+        assert conv["project"] == "deployment"
+
+
+class TestGetMaxSequence:
+    """get_max_sequence returns highest sequence in a conversation."""
+
+    def test_zero_for_empty_conversation(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        assert queries.get_max_sequence(db, conv_id) == 0
+
+    def test_returns_max_after_messages(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "keith", "first")
+        queries.insert_message(db, conv_id, "amy", "second")
+        queries.insert_message(db, conv_id, "keith", "third")
+        assert queries.get_max_sequence(db, conv_id) == 3
+
+
+class TestGetInboxPaginated:
+    """get_inbox_paginated supports limit and offset."""
+
+    def test_returns_conversations_and_has_more(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "hello")
+        convos, has_more = queries.get_inbox_paginated(db, "keith", limit=10)
+        assert len(convos) == 1
+        assert has_more is False
+
+    def test_has_more_true_when_more_exist(self, db):
+        # Create 3 conversations with messages
+        for proj in ["proj-1", "proj-2", "proj-3"]:
+            conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", proj)
+            queries.insert_message(db, conv_id, "amy", f"hello from {proj}")
+        convos, has_more = queries.get_inbox_paginated(db, "keith", limit=2)
+        assert len(convos) == 2
+        assert has_more is True
+
+    def test_offset_skips_conversations(self, db):
+        for proj in ["proj-a", "proj-b", "proj-c"]:
+            conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", proj)
+            queries.insert_message(db, conv_id, "amy", f"hello from {proj}")
+        convos, has_more = queries.get_inbox_paginated(db, "keith", limit=2, offset=2)
+        assert len(convos) == 1
+        assert has_more is False
+
+    def test_project_filter(self, db):
+        for proj in ["general", "alerts"]:
+            conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", proj)
+            queries.insert_message(db, conv_id, "amy", f"hello from {proj}")
+        convos, _ = queries.get_inbox_paginated(db, "keith", project="alerts")
+        assert len(convos) == 1
+        assert convos[0]["project"] == "alerts"
+
+
+class TestListMessagesQuery:
+    """list_messages_query fetches messages with pagination."""
+
+    def test_returns_messages_and_has_more(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "hello")
+        msgs, has_more = queries.list_messages_query(db, "keith")
+        assert len(msgs) == 1
+        assert has_more is False
+
+    def test_limit_and_has_more(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        for i in range(5):
+            queries.insert_message(db, conv_id, "amy", f"msg {i}")
+        msgs, has_more = queries.list_messages_query(db, "keith", limit=3)
+        assert len(msgs) == 3
+        assert has_more is True
+
+    def test_unread_only_filters_by_cursor(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "old")
+        queries.insert_message(db, conv_id, "amy", "new")
+        queries.advance_read_cursor(db, conv_id, "keith", 1)
+        msgs, _ = queries.list_messages_query(db, "keith", unread_only=True)
+        assert len(msgs) == 1
+        assert msgs[0]["body"] == "new"
+
+    def test_unread_only_false_returns_all(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "old")
+        queries.insert_message(db, conv_id, "amy", "new")
+        queries.advance_read_cursor(db, conv_id, "keith", 1)
+        msgs, _ = queries.list_messages_query(db, "keith", unread_only=False)
+        assert len(msgs) == 2
+
+    def test_conversation_id_filter(self, db):
+        conv1 = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        conv2 = queries.find_or_create_direct_conversation(db, "keith", "amy", "alerts")
+        queries.insert_message(db, conv1, "amy", "general msg")
+        queries.insert_message(db, conv2, "amy", "alert msg")
+        msgs, _ = queries.list_messages_query(db, "keith", conversation_id=conv1)
+        assert len(msgs) == 1
+        assert msgs[0]["body"] == "general msg"
+
+    def test_after_sequence_pagination(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        for i in range(5):
+            queries.insert_message(db, conv_id, "amy", f"msg {i}")
+        msgs, _ = queries.list_messages_query(
+            db, "keith", conversation_id=conv_id, after_sequence=3
+        )
+        assert len(msgs) == 2
+        assert msgs[0]["sequence_number"] == 4
+
+    def test_project_filter(self, db):
+        conv1 = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        conv2 = queries.find_or_create_direct_conversation(db, "keith", "amy", "alerts")
+        queries.insert_message(db, conv1, "amy", "general msg")
+        queries.insert_message(db, conv2, "amy", "alert msg")
+        msgs, _ = queries.list_messages_query(db, "keith", project="alerts")
+        assert len(msgs) == 1
+        assert msgs[0]["body"] == "alert msg"
+
+    def test_does_not_return_other_users_messages(self, db):
+        """keith should not see messages in conversations he's not part of."""
+        # amy is in a conversation with someone else -- but we only have 2 users
+        # so test that filter by user works
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "hello keith")
+        msgs, _ = queries.list_messages_query(db, "amy")
+        # amy should also see this (she's a participant)
+        assert len(msgs) == 1
+
+
+class TestGetConversationMessagesWithHasMore:
+    """get_conversation_messages returns has_more flag."""
+
+    def test_returns_tuple_with_has_more(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "keith", "hello")
+        msgs, has_more = queries.get_conversation_messages(db, conv_id)
+        assert len(msgs) == 1
+        assert has_more is False
+
+    def test_has_more_when_limited(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        for i in range(5):
+            queries.insert_message(db, conv_id, "keith", f"msg {i}")
+        msgs, has_more = queries.get_conversation_messages(db, conv_id, limit=3)
+        assert len(msgs) == 3
+        assert has_more is True

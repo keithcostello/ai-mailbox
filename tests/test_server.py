@@ -54,7 +54,11 @@ async def test_mcp_tools_registered():
     assert _mcp_instance is not None
     tools = await _mcp_instance.list_tools()
     tool_names = {t.name for t in tools}
-    expected = {"send_message", "check_messages", "reply_to_message", "get_thread", "whoami"}
+    expected = {
+        "send_message", "check_messages", "reply_to_message", "get_thread", "whoami",
+        # Sprint 2
+        "list_messages", "mark_read", "list_users", "create_group", "add_participant",
+    }
     assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
 

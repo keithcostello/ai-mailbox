@@ -22,6 +22,11 @@ from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
+from ai_mailbox.tools.list_messages import tool_list_messages
+from ai_mailbox.tools.mark_read import tool_mark_read
+from ai_mailbox.tools.list_users import tool_list_users
+from ai_mailbox.tools.create_group import tool_create_group
+from ai_mailbox.tools.add_participant import tool_add_participant
 from ai_mailbox.web import create_web_routes
 
 logger = logging.getLogger(__name__)
@@ -142,41 +147,92 @@ def create_app() -> object:
         return uid
 
     @mcp.tool()
-    def send_message(to: str, body: str, project: str = "general", subject: str = "") -> dict:
-        """Send a message to another user. Use project to organize by topic."""
+    def send_message(
+        body: str,
+        to: str | list[str] | None = None,
+        project: str = "general",
+        subject: str = "",
+        conversation_id: str | None = None,
+        content_type: str = "text/plain",
+        idempotency_key: str | None = None,
+        group_name: str | None = None,
+        group_send_token: str | None = None,
+    ) -> dict:
+        """Send a message. Use 'to' for direct (string) or group (list). Use 'conversation_id' for existing conversations. Group sends require a group_send_token from a confirmation step."""
         uid = _get_user()
-        logger.info(f"send_message: from={uid} to={to} project={project}")
+        logger.info(f"send_message: from={uid} to={to} conv={conversation_id} project={project}")
         return tool_send_message(
             db, user_id=uid, to=to, body=body,
             project=project, subject=subject or None,
+            conversation_id=conversation_id,
+            content_type=content_type,
+            idempotency_key=idempotency_key,
+            group_name=group_name,
+            group_send_token=group_send_token,
         )
 
     @mcp.tool()
     def check_messages(project: str = "", unread_only: bool = True) -> dict:
-        """Check your inbox. Returns messages and marks them as read."""
+        """Deprecated: use list_messages + mark_read instead. Check inbox and auto-mark as read."""
         uid = _get_user()
-        logger.info(f"check_messages: user={uid} project={project or 'all'}")
+        logger.info(f"check_messages [DEPRECATED]: user={uid} project={project or 'all'}")
         return tool_check_messages(
             db, user_id=uid,
             project=project or None, unread_only=unread_only,
         )
 
     @mcp.tool()
-    def reply_to_message(message_id: str, body: str) -> dict:
+    def list_messages(
+        project: str = "",
+        unread_only: bool = True,
+        conversation_id: str | None = None,
+        limit: int = 50,
+        after_sequence: int = 0,
+    ) -> dict:
+        """List messages without marking as read. Pure read operation with pagination."""
+        uid = _get_user()
+        logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
+        return tool_list_messages(
+            db, user_id=uid,
+            project=project or None, unread_only=unread_only,
+            conversation_id=conversation_id,
+            limit=limit, after_sequence=after_sequence,
+        )
+
+    @mcp.tool()
+    def mark_read(conversation_id: str, up_to_sequence: int | None = None) -> dict:
+        """Mark messages as read up to a sequence number in a conversation."""
+        uid = _get_user()
+        logger.info(f"mark_read: user={uid} conv={conversation_id} up_to={up_to_sequence}")
+        return tool_mark_read(
+            db, user_id=uid,
+            conversation_id=conversation_id,
+            up_to_sequence=up_to_sequence,
+        )
+
+    @mcp.tool()
+    def reply_to_message(
+        message_id: str, body: str,
+        content_type: str = "text/plain",
+        idempotency_key: str | None = None,
+    ) -> dict:
         """Reply to a specific message. Inherits project and thread."""
         uid = _get_user()
         logger.info(f"reply_to_message: user={uid} message_id={message_id}")
         return tool_reply_to_message(
             db, user_id=uid, message_id=message_id, body=body,
+            content_type=content_type,
+            idempotency_key=idempotency_key,
         )
 
     @mcp.tool()
-    def get_thread(message_id: str) -> dict:
+    def get_thread(message_id: str, limit: int = 100, after_sequence: int = 0) -> dict:
         """Get the full conversation thread from any message in it."""
         uid = _get_user()
         logger.info(f"get_thread: user={uid} message_id={message_id}")
         return tool_get_thread(
             db, user_id=uid, message_id=message_id,
+            limit=limit, after_sequence=after_sequence,
         )
 
     @mcp.tool()
@@ -185,6 +241,33 @@ def create_app() -> object:
         uid = _get_user()
         logger.info(f"whoami: user={uid}")
         return tool_whoami(db, user_id=uid)
+
+    @mcp.tool()
+    def list_users() -> dict:
+        """List all registered users (except yourself)."""
+        uid = _get_user()
+        logger.info(f"list_users: user={uid}")
+        return tool_list_users(db, user_id=uid)
+
+    @mcp.tool()
+    def create_group(name: str, members: list[str], project: str = "general") -> dict:
+        """Create a named group conversation."""
+        uid = _get_user()
+        logger.info(f"create_group: user={uid} name={name} members={members}")
+        return tool_create_group(
+            db, user_id=uid, name=name, members=members, project=project,
+        )
+
+    @mcp.tool()
+    def add_participant(conversation_id: str, user_to_add: str) -> dict:
+        """Add a user to a group conversation. Cannot add to direct conversations."""
+        uid = _get_user()
+        logger.info(f"add_participant: user={uid} conv={conversation_id} adding={user_to_add}")
+        return tool_add_participant(
+            db, user_id=uid,
+            conversation_id=conversation_id,
+            user_to_add=user_to_add,
+        )
 
     # --- Login page ---
 
@@ -243,7 +326,7 @@ def create_app() -> object:
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
-            "version": "0.2.0",
+            "version": "0.4.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         })

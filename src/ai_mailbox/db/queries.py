@@ -100,15 +100,16 @@ def find_or_create_project_group(
 
 
 def create_team_group(
-    db: DBConnection, name: str, created_by: str, member_ids: list[str]
+    db: DBConnection, name: str, created_by: str, member_ids: list[str],
+    project: str | None = None,
 ) -> str:
     """Create a new team group. Returns conversation_id."""
     conv_id = _uuid()
     now = _now()
     db.execute(
-        """INSERT INTO conversations (id, type, name, created_by, created_at, updated_at)
-           VALUES (?, 'team_group', ?, ?, ?, ?)""",
-        (conv_id, name, created_by, now, now),
+        """INSERT INTO conversations (id, type, project, name, created_by, created_at, updated_at)
+           VALUES (?, 'team_group', ?, ?, ?, ?, ?)""",
+        (conv_id, project, name, created_by, now, now),
     )
     all_members = set(member_ids) | {created_by}
     for uid in all_members:
@@ -118,6 +119,35 @@ def create_team_group(
         )
     db.commit()
     return conv_id
+
+
+def find_or_create_group_by_members(
+    db: DBConnection,
+    creator: str,
+    member_ids: list[str],
+    project: str,
+    name: str | None = None,
+) -> tuple[str, bool]:
+    """Find existing team_group with exact member set or create one.
+
+    Returns (conversation_id, created: bool).
+    Auto-generates name from sorted participant list if name is None.
+    """
+    all_members = sorted(set(member_ids) | {creator})
+    auto_name = ",".join(all_members)
+    lookup_name = name if name else auto_name
+
+    # Try to find existing group by name + project
+    row = db.fetchone(
+        "SELECT id FROM conversations WHERE type = 'team_group' AND project = ? AND name = ?",
+        (project, lookup_name),
+    )
+    if row:
+        return row["id"], False
+
+    # Create new group
+    conv_id = create_team_group(db, lookup_name, creator, member_ids, project=project)
+    return conv_id, True
 
 
 def add_participant(db: DBConnection, conversation_id: str, user_id: str) -> None:
@@ -209,18 +239,22 @@ def get_conversation_messages(
     conversation_id: str,
     after_sequence: int = 0,
     limit: int = 100,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Fetch messages in a conversation after a sequence number.
 
     Ordered by sequence_number ASC.
+    Returns (messages, has_more).
     """
-    return db.fetchall(
+    # Fetch one extra to detect has_more
+    rows = db.fetchall(
         """SELECT * FROM messages
            WHERE conversation_id = ? AND sequence_number > ?
            ORDER BY sequence_number ASC
            LIMIT ?""",
-        (conversation_id, after_sequence, limit),
+        (conversation_id, after_sequence, limit + 1),
     )
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +268,15 @@ def get_last_read_sequence(db: DBConnection, conversation_id: str, user_id: str)
         (conversation_id, user_id),
     )
     return row["last_read_sequence"] if row else 0
+
+
+def get_max_sequence(db: DBConnection, conversation_id: str) -> int:
+    """Return the highest sequence_number in a conversation. 0 if no messages."""
+    row = db.fetchone(
+        "SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM messages WHERE conversation_id = ?",
+        (conversation_id,),
+    )
+    return row["max_seq"]
 
 
 def advance_read_cursor(db: DBConnection, conversation_id: str, user_id: str, sequence: int) -> None:
@@ -315,6 +358,80 @@ def get_inbox(
     return result
 
 
+def get_inbox_paginated(
+    db: DBConnection,
+    user_id: str,
+    project: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], bool]:
+    """Paginated inbox. Returns (conversations, has_more)."""
+    # Reuse get_inbox, then paginate in Python (fine for alpha scale)
+    all_convos = get_inbox(db, user_id, project)
+    page = all_convos[offset : offset + limit + 1]
+    has_more = len(page) > limit
+    return page[:limit], has_more
+
+
+def list_messages_query(
+    db: DBConnection,
+    user_id: str,
+    project: str | None = None,
+    unread_only: bool = True,
+    conversation_id: str | None = None,
+    after_sequence: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict], bool]:
+    """Fetch messages for the list_messages tool.
+
+    If conversation_id is specified: messages from that conversation only,
+    paginated by after_sequence.
+    If not: messages across all user's conversations.
+    Returns (messages, has_more).
+    """
+    if conversation_id:
+        # Single conversation mode
+        conditions = ["m.conversation_id = ?", "m.sequence_number > ?"]
+        params: list = [conversation_id, after_sequence]
+        if unread_only:
+            conditions.append(
+                "m.sequence_number > (SELECT cp.last_read_sequence "
+                "FROM conversation_participants cp "
+                "WHERE cp.conversation_id = m.conversation_id AND cp.user_id = ?)"
+            )
+            params.append(user_id)
+        where = " AND ".join(conditions)
+        rows = db.fetchall(
+            f"""SELECT m.* FROM messages m
+                WHERE {where}
+                ORDER BY m.sequence_number ASC
+                LIMIT ?""",
+            tuple(params + [limit + 1]),
+        )
+    else:
+        # Cross-conversation mode
+        conditions = ["cp.user_id = ?"]
+        params = [user_id]
+        if project:
+            conditions.append("c.project = ?")
+            params.append(project)
+        if unread_only:
+            conditions.append("m.sequence_number > cp.last_read_sequence")
+        where = " AND ".join(conditions)
+        rows = db.fetchall(
+            f"""SELECT m.* FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                JOIN conversation_participants cp ON c.id = cp.conversation_id
+                WHERE {where}
+                ORDER BY m.created_at ASC
+                LIMIT ?""",
+            tuple(params + [limit + 1]),
+        )
+
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
+
+
 def get_unread_counts(db: DBConnection, user_id: str) -> dict[str, int]:
     """Return unread message count per project for a user.
 
@@ -347,7 +464,8 @@ def get_thread(db: DBConnection, message_id: str) -> list[dict]:
     msg = get_message(db, message_id)
     if msg is None:
         return []
-    return get_conversation_messages(db, msg["conversation_id"])
+    msgs, _ = get_conversation_messages(db, msg["conversation_id"])
+    return msgs
 
 
 # ---------------------------------------------------------------------------
