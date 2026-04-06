@@ -63,10 +63,19 @@ def tool_list_messages(
     if has_more and msgs:
         next_cursor = msgs[-1]["sequence_number"]
 
+    # Truncate bodies to previews -- full content via get_thread
+    previews = []
+    for m in msgs:
+        d = dict(m)
+        body = d.get("body", "")
+        if len(body) > 200:
+            d["body"] = body[:200] + "..."
+        previews.append(d)
+
     return {
         "user": user_id,
         "message_count": len(msgs),
         "has_more": has_more,
         "next_cursor": next_cursor,
-        "messages": [dict(m) for m in msgs],
+        "messages": previews,
     }
