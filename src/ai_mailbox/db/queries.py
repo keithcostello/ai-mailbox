@@ -581,7 +581,10 @@ def _search_postgres(
     where = " AND ".join(conditions)
 
     return db.fetchall(
-        f"""SELECT m.*, c.project, c.type,
+        f"""SELECT m.id, m.conversation_id, m.from_user, m.sequence_number,
+                   m.subject, m.body, m.content_type, m.idempotency_key,
+                   m.reply_to, m.ack_state, m.created_at,
+                   c.project, c.type,
                    ts_rank(m.search_vector, plainto_tsquery('english', ?)) AS rank
             FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
@@ -631,7 +634,10 @@ def _search_sqlite(
     where = " AND ".join(conditions)
 
     return db.fetchall(
-        f"""SELECT m.*, c.project, c.type
+        f"""SELECT m.id, m.conversation_id, m.from_user, m.sequence_number,
+                   m.subject, m.body, m.content_type, m.idempotency_key,
+                   m.reply_to, m.ack_state, m.created_at,
+                   c.project, c.type
             FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
             JOIN conversation_participants cp ON c.id = cp.conversation_id

@@ -6,6 +6,8 @@ from typing import List
 
 MAX_BODY_LENGTH = 10_000
 MAX_GROUP_SIZE = 50
+THREAD_BODY_DISPLAY_LIMIT = 2_000
+THREAD_DEFAULT_LIMIT = 5
 
 _DEFAULT_SECRET = "change-me-in-production-minimum-32-bytes!"
 

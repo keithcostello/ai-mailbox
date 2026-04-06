@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from ai_mailbox.config import MAX_BODY_LENGTH
+from ai_mailbox.config import MAX_BODY_LENGTH, THREAD_BODY_DISPLAY_LIMIT
 from ai_mailbox.db.queries import (
     find_or_create_direct_conversation,
     find_or_create_group_by_members,
@@ -118,7 +118,7 @@ def _send_direct(
         return result
 
     conv = get_conversation(db, conv_id)
-    return {
+    resp = {
         "message_id": result["id"],
         "conversation_id": conv_id,
         "from_user": user_id,
@@ -126,6 +126,9 @@ def _send_direct(
         "to_users": [to],
         "project": conv["project"] if conv else project,
     }
+    if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+        resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+    return resp
 
 
 def _send_group(
@@ -182,7 +185,7 @@ def _send_to_conversation(
             return result
 
         other_users = [p for p in participants if p != user_id]
-        return {
+        resp = {
             "message_id": result["id"],
             "conversation_id": conversation_id,
             "from_user": user_id,
@@ -190,6 +193,9 @@ def _send_to_conversation(
             "to_users": other_users,
             "project": conv["project"],
         }
+        if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+            resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+        return resp
 
     # Group conversations: require token
     return _group_confirmation_gate(
@@ -245,7 +251,7 @@ def _group_confirmation_gate(
         return result
 
     other_users = [p for p in participants if p != user_id]
-    return {
+    resp = {
         "message_id": result["id"],
         "conversation_id": conversation_id,
         "from_user": user_id,
@@ -253,3 +259,6 @@ def _group_confirmation_gate(
         "to_users": other_users,
         "project": conv["project"] if conv else "general",
     }
+    if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+        resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+    return resp

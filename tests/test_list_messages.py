@@ -183,3 +183,26 @@ class TestMarkReadBasic:
         r2 = tool_list_messages(db, user_id="keith")
         assert r2["message_count"] == 1
         assert r2["messages"][0]["body"] == "msg 3"
+
+
+# ---------------------------------------------------------------------------
+# Body truncation in list_messages previews
+# ---------------------------------------------------------------------------
+
+class TestBodyTruncation:
+    """list_messages truncates bodies to 200-char previews."""
+
+    def test_short_body_no_truncation(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "x" * 50)
+        result = tool_list_messages(db, user_id="keith")
+        assert len(result["messages"][0]["body"]) == 50
+        assert not result["messages"][0]["body"].endswith("...")
+
+    def test_long_body_truncated_at_200(self, db):
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "y" * 300)
+        result = tool_list_messages(db, user_id="keith")
+        body = result["messages"][0]["body"]
+        assert len(body) == 203  # 200 + "..."
+        assert body.endswith("...")

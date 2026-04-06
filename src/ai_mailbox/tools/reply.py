@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from ai_mailbox.config import MAX_BODY_LENGTH
+from ai_mailbox.config import MAX_BODY_LENGTH, THREAD_BODY_DISPLAY_LIMIT
 from ai_mailbox.db.queries import (
     get_conversation,
     get_conversation_participants,
@@ -70,10 +70,13 @@ def tool_reply_to_message(
     other_users = [p for p in participants if p != user_id]
     to_user = other_users[0] if other_users else original["from_user"]
 
-    return {
+    resp = {
         "message_id": result["id"],
         "conversation_id": conv_id,
         "from_user": user_id,
         "to_user": to_user,
         "project": conv["project"] if conv else "general",
     }
+    if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+        resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+    return resp
