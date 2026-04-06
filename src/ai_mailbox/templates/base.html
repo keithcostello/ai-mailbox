@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Mailbox{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    {% if user_id %}
+    <nav class="bg-white border-b border-gray-200 px-6 py-3">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span class="text-lg font-semibold text-gray-900">AI Mailbox</span>
+                <a href="/web/inbox" class="text-sm text-gray-600 hover:text-gray-900">Inbox</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm text-gray-600">{{ display_name }}</span>
+                <a href="/web/logout" class="text-sm text-red-600 hover:text-red-800">Logout</a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="max-w-4xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

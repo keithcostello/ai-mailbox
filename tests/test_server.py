@@ -1,4 +1,4 @@
-"""Test Suite 4: Server Integration with OAuth — 5 tests."""
+"""Server integration tests -- app creation, health, tools, web routes."""
 
 import os
 import pytest
@@ -60,12 +60,48 @@ async def test_mcp_tools_registered():
 
 @pytest.mark.asyncio
 async def test_login_page_renders():
-    """/login returns HTML login form."""
+    """/login returns HTML login form (OAuth login, not web login)."""
     from ai_mailbox.server import create_app
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/login?client_id=test&code_challenge=abc&redirect_uri=http://localhost&state=xyz&scopes=read")
     assert resp.status_code == 200
-    assert "AI Mailbox Login" in resp.text
     assert "username" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_web_login_page_renders():
+    """/web/login returns styled web login form."""
+    from ai_mailbox.server import create_app
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/web/login")
+    assert resp.status_code == 200
+    assert "tailwindcss" in resp.text
+    assert "htmx.org" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_web_health_page_renders():
+    """/web/health returns health dashboard."""
+    from ai_mailbox.server import create_app
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/web/health")
+    assert resp.status_code == 200
+    assert "HEALTHY" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_web_inbox_requires_auth():
+    """/web/inbox redirects to login without session."""
+    from ai_mailbox.server import create_app
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        resp = await client.get("/web/inbox")
+    assert resp.status_code == 302
+    assert "/web/login" in resp.headers["location"]

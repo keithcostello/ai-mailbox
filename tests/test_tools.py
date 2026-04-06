@@ -1,4 +1,4 @@
-"""Test Suite 3: Real Communication Scenarios A-E (OAuth — no api_key)."""
+"""Tool integration tests with conversation-based schema and structured errors."""
 
 import pytest
 
@@ -7,6 +7,7 @@ from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
+from ai_mailbox.errors import is_error
 
 
 # ---------------------------------------------------------------------------
@@ -14,7 +15,7 @@ from ai_mailbox.tools.identity import tool_whoami
 # ---------------------------------------------------------------------------
 
 class TestScenarioA:
-    """First contact — send, receive, auto-mark-read."""
+    """First contact -- send, receive, auto-mark-read."""
 
     def test_keith_sends_to_amy(self, db):
         result = tool_send_message(db, user_id="keith", to="amy",
@@ -47,7 +48,7 @@ class TestScenarioA:
 # ---------------------------------------------------------------------------
 
 class TestScenarioB:
-    """Threaded conversation — 4-message back-and-forth."""
+    """Threaded conversation -- 4-message back-and-forth."""
 
     def test_full_thread(self, db):
         r1 = tool_send_message(db, user_id="keith", to="amy",
@@ -95,13 +96,23 @@ class TestScenarioB:
         assert thread["messages"][1]["reply_to"] == r1["message_id"]
         assert thread["messages"][2]["reply_to"] == r2["message_id"]
 
+    def test_any_participant_can_reply(self, db):
+        """New behavior: both participants in a conversation can reply to any message."""
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="For Amy")
+        # Keith (sender) replies to his own message -- this is now allowed
+        r2 = tool_reply_to_message(db, user_id="keith",
+                                   message_id=r1["message_id"],
+                                   body="Follow-up from Keith")
+        assert "message_id" in r2
+        assert r2["from_user"] == "keith"
+
 
 # ---------------------------------------------------------------------------
 # Scenario C: Multi-Project Inbox Management
 # ---------------------------------------------------------------------------
 
 class TestScenarioC:
-    """Multi-project inbox — filtering and unread counts."""
+    """Multi-project inbox -- filtering and unread counts."""
 
     def _seed_messages(self, db):
         tool_send_message(db, user_id="keith", to="amy",
@@ -140,7 +151,7 @@ class TestScenarioC:
 # ---------------------------------------------------------------------------
 
 class TestScenarioD:
-    """Thread isolation — threads don't contaminate each other."""
+    """Thread isolation -- threads don't contaminate each other."""
 
     def test_threads_isolated(self, db):
         a1 = tool_send_message(db, user_id="keith", to="amy",
@@ -167,45 +178,87 @@ class TestScenarioD:
 
 
 # ---------------------------------------------------------------------------
-# Scenario E: Edge Cases
+# Scenario E: Error Handling (structured errors)
 # ---------------------------------------------------------------------------
 
 class TestScenarioE:
-    """Edge cases — error handling."""
+    """Error handling -- structured error responses."""
 
-    def test_send_to_self_errors(self, db):
-        result = tool_send_message(db, user_id="keith", to="keith",
-                                   body="Self msg")
-        assert "error" in result
+    def test_send_to_self_structured_error(self, db):
+        result = tool_send_message(db, user_id="keith", to="keith", body="Self msg")
+        assert is_error(result)
+        assert result["error"]["code"] == "SELF_SEND"
 
-    def test_send_to_nonexistent_user_errors(self, db):
-        result = tool_send_message(db, user_id="keith", to="nobody",
-                                   body="Hello")
-        assert "error" in result
+    def test_send_to_nonexistent_user_structured_error(self, db):
+        result = tool_send_message(db, user_id="keith", to="nobody", body="Hello")
+        assert is_error(result)
+        assert result["error"]["code"] == "RECIPIENT_NOT_FOUND"
+        assert result["error"]["param"] == "to"
 
-    def test_reply_to_nonexistent_message_errors(self, db):
+    def test_reply_to_nonexistent_message_structured_error(self, db):
         result = tool_reply_to_message(db, user_id="keith",
                                        message_id="fake-uuid", body="Reply")
-        assert "error" in result
+        assert is_error(result)
+        assert result["error"]["code"] == "MESSAGE_NOT_FOUND"
 
-    def test_reply_to_message_not_addressed_to_you_errors(self, db):
-        r1 = tool_send_message(db, user_id="keith", to="amy",
-                               body="For Amy")
-        result = tool_reply_to_message(db, user_id="keith",
-                                       message_id=r1["message_id"],
-                                       body="Self-reply")
-        assert "error" in result
-
-    def test_get_thread_invalid_id_errors(self, db):
+    def test_get_thread_invalid_id_structured_error(self, db):
         result = tool_get_thread(db, user_id="keith",
                                  message_id="nonexistent-uuid")
-        assert "error" in result
+        assert is_error(result)
+        assert result["error"]["code"] == "MESSAGE_NOT_FOUND"
 
     def test_check_empty_inbox(self, db):
         result = tool_check_messages(db, user_id="keith")
         assert result["message_count"] == 0
         assert result["messages"] == []
 
-    def test_empty_body_errors(self, db):
+    def test_empty_body_structured_error(self, db):
         result = tool_send_message(db, user_id="keith", to="amy", body="")
-        assert "error" in result
+        assert is_error(result)
+        assert result["error"]["code"] == "EMPTY_BODY"
+        assert result["error"]["param"] == "body"
+
+    def test_empty_body_on_reply_structured_error(self, db):
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(db, user_id="amy",
+                                       message_id=r1["message_id"], body="  ")
+        assert is_error(result)
+        assert result["error"]["code"] == "EMPTY_BODY"
+
+    def test_non_participant_get_thread_structured_error(self, db):
+        """A non-participant cannot view a conversation thread."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="private")
+        result = tool_get_thread(db, user_id="bob",
+                                 message_id=r1["message_id"])
+        assert is_error(result)
+        assert result["error"]["code"] == "PERMISSION_DENIED"
+
+    def test_non_participant_reply_structured_error(self, db):
+        """A non-participant cannot reply to a conversation."""
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="private")
+        result = tool_reply_to_message(db, user_id="bob",
+                                       message_id=r1["message_id"],
+                                       body="I shouldn't be here")
+        assert is_error(result)
+        assert result["error"]["code"] == "PERMISSION_DENIED"
+
+    def test_all_errors_are_non_retryable(self, db):
+        """Validation errors should not be retryable."""
+        errors = [
+            tool_send_message(db, user_id="keith", to="keith", body="self"),
+            tool_send_message(db, user_id="keith", to="nobody", body="hello"),
+            tool_send_message(db, user_id="keith", to="amy", body=""),
+        ]
+        for result in errors:
+            assert is_error(result)
+            assert result["error"]["retryable"] is False

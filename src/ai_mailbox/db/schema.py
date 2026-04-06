@@ -89,3 +89,14 @@ def ensure_schema_postgres(database_url: str) -> None:
             raise
     conn.close()
     logger.info("PostgreSQL schema migrations complete")
+
+    # Run Python data migration for 003 (conversation model)
+    from ai_mailbox.db.connection import PostgresDB
+    from ai_mailbox.db.migrations.migrate_003 import migrate_003_data
+    pg_db = PostgresDB(database_url)
+    try:
+        stats = migrate_003_data(pg_db)
+        if stats["conversations_created"] > 0:
+            logger.info(f"Migration 003 data: {stats}")
+    except Exception as e:
+        logger.warning(f"Migration 003 data step skipped: {e}")

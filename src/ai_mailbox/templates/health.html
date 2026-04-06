@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Health - AI Mailbox{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold text-gray-900 mb-6">System Health</h1>
+
+<div class="bg-white shadow rounded-lg p-6 space-y-4">
+    <div class="flex items-center justify-between py-2 border-b border-gray-100">
+        <span class="text-sm font-medium text-gray-600">Status</span>
+        <span class="text-sm font-semibold {% if health.status == 'healthy' %}text-green-600{% else %}text-red-600{% endif %}">
+            {{ health.status | upper }}
+        </span>
+    </div>
+    <div class="flex items-center justify-between py-2 border-b border-gray-100">
+        <span class="text-sm font-medium text-gray-600">Version</span>
+        <span class="text-sm text-gray-900">{{ health.version }}</span>
+    </div>
+    <div class="flex items-center justify-between py-2 border-b border-gray-100">
+        <span class="text-sm font-medium text-gray-600">Users</span>
+        <span class="text-sm text-gray-900">{{ health.user_count }}</span>
+    </div>
+    <div class="flex items-center justify-between py-2">
+        <span class="text-sm font-medium text-gray-600">Auth</span>
+        <span class="text-sm text-gray-900">{{ health.auth }}</span>
+    </div>
+</div>
+{% endblock %}

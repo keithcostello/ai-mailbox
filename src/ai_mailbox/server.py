@@ -22,6 +22,7 @@ from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
+from ai_mailbox.web import create_web_routes
 
 logger = logging.getLogger(__name__)
 
@@ -247,11 +248,14 @@ def create_app() -> object:
             "auth": "oauth2.1",
         })
 
+    # Web UI routes (Jinja2 + HTMX + Tailwind)
+    web_routes = create_web_routes(db, provider, config.jwt_secret)
+
     mcp._custom_starlette_routes = [
         Route("/health", health),
         Route("/login", login_get, methods=["GET"]),
         Route("/login", login_post, methods=["POST"]),
-    ]
+    ] + web_routes
 
     # Build ASGI app
     app = mcp.streamable_http_app()

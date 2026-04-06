@@ -1,10 +1,16 @@
-"""send_message tool — send a new message or start a thread."""
+"""send_message tool -- send a new message to another user."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ai_mailbox.db.queries import insert_message
+from ai_mailbox.db.queries import (
+    find_or_create_direct_conversation,
+    get_conversation,
+    get_user,
+    insert_message,
+)
+from ai_mailbox.errors import is_error, make_error
 
 if TYPE_CHECKING:
     from ai_mailbox.db.connection import DBConnection
@@ -19,25 +25,26 @@ def tool_send_message(
     project: str = "general",
     subject: str | None = None,
 ) -> dict:
-    """Send a message to another user. User identity from OAuth token."""
+    """Send a message to another user."""
     if not body.strip():
-        return {"error": "Message body cannot be empty"}
+        return make_error("EMPTY_BODY", "Message body cannot be empty", param="body")
 
     if user_id == to:
-        return {"error": "Cannot send a message to yourself"}
+        return make_error("SELF_SEND", "Cannot send a message to yourself")
 
-    # Verify recipient exists
-    recipient = db.fetchone("SELECT id FROM users WHERE id = ?", (to,))
-    if recipient is None:
-        return {"error": f"User '{to}' not found"}
+    if get_user(db, to) is None:
+        return make_error("RECIPIENT_NOT_FOUND", f"User '{to}' not found", param="to")
 
-    msg_id = insert_message(
-        db, from_user=user_id, to_user=to, body=body,
-        project=project, subject=subject,
-    )
+    conv_id = find_or_create_direct_conversation(db, user_id, to, project)
+    result = insert_message(db, conv_id, user_id, body, subject=subject)
+
+    if is_error(result):
+        return result
+
+    conv = get_conversation(db, conv_id)
     return {
-        "message_id": msg_id,
+        "message_id": result["id"],
         "from_user": user_id,
         "to_user": to,
-        "project": project,
+        "project": conv["project"] if conv else project,
     }
