@@ -60,6 +60,8 @@ async def test_mcp_tools_registered():
         "list_messages", "mark_read", "list_users", "create_group", "add_participant",
         # Sprint 4
         "search_messages",
+        # Sprint 5
+        "acknowledge", "archive_conversation",
     }
     assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 

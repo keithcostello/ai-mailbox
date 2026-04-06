@@ -22,6 +22,8 @@ ERROR_CODES: dict[str, dict] = {
     "GROUP_TOKEN_INVALID":    {"retryable": False},
     # Sprint 4
     "INVALID_JSON":           {"retryable": False},
+    # Sprint 5
+    "INVALID_STATE_TRANSITION": {"retryable": False},
 }
 
 

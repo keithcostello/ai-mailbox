@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _MIGRATION_DIR = Path(__file__).parent / "migrations"
 
 
-_PG_ONLY_MIGRATIONS = {"004_search.sql"}
+_PG_ONLY_MIGRATIONS = {"004_search.sql", "005_pg_only_fk_fixes.sql"}
 
 
 def _split_pg_statements(sql: str) -> list[str]:

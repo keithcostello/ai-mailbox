@@ -181,6 +181,36 @@ def get_conversation_participants(db: DBConnection, conversation_id: str) -> lis
 
 
 # ---------------------------------------------------------------------------
+# Archiving
+# ---------------------------------------------------------------------------
+
+def set_archive(
+    db: DBConnection, conversation_id: str, user_id: str, archive: bool
+) -> str | None:
+    """Set or clear archived_at for a user in a conversation. Returns archived_at value."""
+    if archive:
+        now = _now()
+        db.execute(
+            """UPDATE conversation_participants SET archived_at = ?
+               WHERE conversation_id = ? AND user_id = ? AND archived_at IS NULL""",
+            (now, conversation_id, user_id),
+        )
+        db.commit()
+        row = db.fetchone(
+            "SELECT archived_at FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
+            (conversation_id, user_id),
+        )
+        return row["archived_at"] if row else now
+    else:
+        db.execute(
+            "UPDATE conversation_participants SET archived_at = NULL WHERE conversation_id = ? AND user_id = ?",
+            (conversation_id, user_id),
+        )
+        db.commit()
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Message operations
 # ---------------------------------------------------------------------------
 
@@ -224,6 +254,13 @@ def insert_message(
     db.execute(
         "UPDATE conversations SET updated_at = ? WHERE id = ?",
         (now, conversation_id),
+    )
+    # Auto-unarchive for recipients (not the sender)
+    db.execute(
+        """UPDATE conversation_participants
+           SET archived_at = NULL
+           WHERE conversation_id = ? AND user_id != ? AND archived_at IS NOT NULL""",
+        (conversation_id, from_user),
     )
     db.commit()
     return {"id": msg_id, "sequence_number": next_seq}
@@ -299,11 +336,13 @@ def advance_read_cursor(db: DBConnection, conversation_id: str, user_id: str, se
 # ---------------------------------------------------------------------------
 
 def get_inbox(
-    db: DBConnection, user_id: str, project: str | None = None
+    db: DBConnection, user_id: str, project: str | None = None,
+    include_archived: bool = False,
 ) -> list[dict]:
     """Return conversations for a user with unread counts and last message preview.
 
     Ordered by last_message_at DESC (most recent first).
+    Excludes archived conversations unless include_archived is True.
     """
     conditions = ["cp.user_id = ?"]
     params: list = [user_id]
@@ -311,6 +350,9 @@ def get_inbox(
     if project is not None:
         conditions.append("c.project = ?")
         params.append(project)
+
+    if not include_archived:
+        conditions.append("cp.archived_at IS NULL")
 
     where = " AND ".join(conditions)
 
@@ -322,6 +364,7 @@ def get_inbox(
                 c.name,
                 c.updated_at AS last_message_at,
                 cp.last_read_sequence,
+                cp.archived_at,
                 (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS total_messages,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.sequence_number > cp.last_read_sequence) AS unread_count,
@@ -358,6 +401,7 @@ def get_inbox(
             "last_message_from": r["last_message_from"],
             "unread_count": r["unread_count"],
             "total_messages": r["total_messages"],
+            "archived": r["archived_at"] is not None,
         })
     return result
 
@@ -368,10 +412,11 @@ def get_inbox_paginated(
     project: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    include_archived: bool = False,
 ) -> tuple[list[dict], bool]:
     """Paginated inbox. Returns (conversations, has_more)."""
     # Reuse get_inbox, then paginate in Python (fine for alpha scale)
-    all_convos = get_inbox(db, user_id, project)
+    all_convos = get_inbox(db, user_id, project, include_archived=include_archived)
     page = all_convos[offset : offset + limit + 1]
     has_more = len(page) > limit
     return page[:limit], has_more
@@ -628,6 +673,14 @@ def get_user_conversation_partners(db: DBConnection, user_id: str) -> list[str]:
 def get_user(db: DBConnection, user_id: str) -> dict | None:
     """Fetch user by ID."""
     return db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+
+
+def update_last_seen(db: DBConnection, user_id: str) -> None:
+    """Update user's last_seen timestamp. Called on every MCP tool invocation."""
+    db.execute(
+        "UPDATE users SET last_seen = ? WHERE id = ?",
+        (_now(), user_id),
+    )
 
 
 def get_all_users(db: DBConnection) -> list[dict]:

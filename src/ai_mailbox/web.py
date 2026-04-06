@@ -34,14 +34,13 @@ _jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATE_DIR)), autoescape
 
 INBOX_PAGE_SIZE = 20
 
-# --- AI user badge heuristic ---
-_AI_PATTERNS = {"claude", "gpt", "bot", "gemini", "copilot"}
+# Per-request cache for is_ai_user DB lookups (avoids N+1 in thread view)
+_ai_user_cache: dict[str, bool] = {}
 
 
 def _is_ai_user(user_id: str) -> bool:
-    """Heuristic: identify AI/bot users by name pattern."""
-    lower = user_id.lower()
-    return any(pat in lower for pat in _AI_PATTERNS) or lower.startswith("ai-")
+    """Check if user is an agent by user_type field. Cached per-request."""
+    return _ai_user_cache.get(user_id, False)
 
 
 # Register Jinja2 globals and filters
@@ -175,6 +174,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         get_user_projects,
         insert_message,
         search_messages,
+        set_archive,
     )
 
     # --- Auth helpers ---
@@ -186,6 +186,13 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
     def _is_htmx(request):
         """Check if request is from HTMX."""
         return request.headers.get("HX-Request") == "true"
+
+    def _refresh_ai_user_cache():
+        """Reload the AI user cache from DB. Call once per request cycle."""
+        _ai_user_cache.clear()
+        for u in get_all_users(db):
+            if u.get("user_type") == "agent":
+                _ai_user_cache[u["id"]] = True
 
     # --- Login / Logout ---
 
@@ -272,6 +279,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
 
         project_filter = request.query_params.get("project", "")
         participant_filter = request.query_params.get("participant", "")
+        include_archived = request.query_params.get("archived", "") == "true"
         page = int(request.query_params.get("page", "1"))
         if page < 1:
             page = 1
@@ -281,6 +289,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             db, user_id,
             project=project_filter or None,
             limit=INBOX_PAGE_SIZE, offset=offset,
+            include_archived=include_archived,
         )
 
         # Filter by participant if specified
@@ -337,12 +346,22 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         if max_seq > 0:
             advance_read_cursor(db, conv_id, user_id, max_seq)
 
+        # Check archive state
+        cp_row = db.fetchone(
+            "SELECT archived_at FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
+            (conv_id, user_id),
+        )
+        is_archived = cp_row["archived_at"] is not None if cp_row else False
+
+        _refresh_ai_user_cache()
+
         thread_html = _render(
             "partials/thread_view.html",
             user_id=user_id,
             conversation=conv,
             participants=participants,
             messages=[dict(m) for m in messages],
+            is_archived=is_archived,
         ).body.decode("utf-8")
 
         # If HTMX request, return just the partial
@@ -593,6 +612,91 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             messages=[dict(m) for m in messages],
         )
 
+    # --- Archive ---
+
+    async def web_archive(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _htmx_error(429)
+
+        conv_id = request.path_params["conv_id"]
+        conv = get_conversation(db, conv_id)
+        if not conv:
+            return _htmx_error(404)
+
+        participants = get_conversation_participants(db, conv_id)
+        if user_id not in participants:
+            return _htmx_error(403)
+
+        # Toggle archive state
+        cp_row = db.fetchone(
+            "SELECT archived_at FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
+            (conv_id, user_id),
+        )
+        currently_archived = cp_row["archived_at"] is not None if cp_row else False
+        set_archive(db, conv_id, user_id, not currently_archived)
+
+        # Re-render the thread
+        messages, _ = get_conversation_messages(db, conv_id)
+        max_seq = get_max_sequence(db, conv_id)
+        if max_seq > 0:
+            advance_read_cursor(db, conv_id, user_id, max_seq)
+
+        _refresh_ai_user_cache()
+
+        return _render(
+            "partials/thread_view.html",
+            user_id=user_id,
+            conversation=conv,
+            participants=participants,
+            messages=[dict(m) for m in messages],
+            is_archived=not currently_archived,
+        )
+
+    # --- User directory ---
+
+    async def web_users(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _render_error(429, user_id=user_id)
+
+        display_name = _get_user_display_name(db, user_id)
+        all_users = get_all_users(db)
+        users = []
+        now = datetime.now(timezone.utc)
+        for u in all_users:
+            last_seen = u.get("last_seen")
+            online = False
+            if last_seen:
+                try:
+                    seen_dt = datetime.fromisoformat(last_seen)
+                    if seen_dt.tzinfo is None:
+                        seen_dt = seen_dt.replace(tzinfo=timezone.utc)
+                    from datetime import timedelta
+                    online = (now - seen_dt) < timedelta(minutes=5)
+                except (ValueError, TypeError):
+                    pass
+            users.append({
+                "id": u["id"],
+                "display_name": u["display_name"],
+                "user_type": u.get("user_type", "human"),
+                "last_seen": last_seen,
+                "online": online,
+            })
+
+        return _render(
+            "users.html",
+            user_id=user_id,
+            display_name=display_name,
+            users=users,
+        )
+
     # --- Health ---
 
     async def web_health(request: Request):
@@ -614,9 +718,11 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         Route("/web/inbox/conversations", web_conversation_list, methods=["GET"]),
         Route("/web/conversation/{conv_id}", web_conversation, methods=["GET"]),
         Route("/web/conversation/{conv_id}/reply", web_reply, methods=["POST"]),
+        Route("/web/conversation/{conv_id}/archive", web_archive, methods=["POST"]),
         Route("/web/compose", web_compose_get, methods=["GET"]),
         Route("/web/compose", web_compose_post, methods=["POST"]),
         Route("/web/search", web_search, methods=["GET"]),
         Route("/web/conversation/{conv_id}/messages", web_message_list, methods=["GET"]),
+        Route("/web/users", web_users, methods=["GET"]),
         Route("/web/health", web_health, methods=["GET"]),
     ]

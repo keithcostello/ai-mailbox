@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Users - AI Mailbox{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto p-6">
+    <div class="card bg-base-100 shadow">
+        <div class="card-body">
+            <h3 class="card-title">Users</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.display_name }}</td>
+                            <td>
+                                {% if user.user_type == 'agent' %}
+                                <span class="badge badge-info badge-sm">Agent</span>
+                                {% else %}
+                                <span class="badge badge-ghost badge-sm">Human</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.online %}
+                                <span class="badge badge-success badge-xs">online</span>
+                                {% else %}
+                                <span class="badge badge-ghost badge-xs">offline</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.last_seen | relative_time }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

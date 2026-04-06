@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     api_key TEXT NOT NULL UNIQUE,
     password_hash TEXT,
+    user_type TEXT NOT NULL DEFAULT 'human',
+    last_seen TIMESTAMP,
+    session_mode TEXT NOT NULL DEFAULT 'persistent',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -34,6 +37,7 @@ CREATE TABLE IF NOT EXISTS conversation_participants (
     user_id TEXT NOT NULL REFERENCES users(id),
     joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_read_sequence INTEGER NOT NULL DEFAULT 0,
+    archived_at TIMESTAMP,
     PRIMARY KEY (conversation_id, user_id)
 );
 
@@ -49,6 +53,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content_type TEXT NOT NULL DEFAULT 'text/plain',
     idempotency_key TEXT,
     reply_to TEXT REFERENCES messages(id),
+    ack_state TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (conversation_id, sequence_number)
 );

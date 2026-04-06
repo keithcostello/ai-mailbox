@@ -16,8 +16,16 @@
         <div class="prose-msg text-sm">{{ msg.body | markdown }}</div>
         {% endif %}
     </div>
-    {% if msg.subject %}
-    <div class="chat-footer text-xs opacity-50">Re: {{ msg.subject }}</div>
-    {% endif %}
+    <div class="chat-footer text-xs opacity-50">
+        {% if msg.subject %}Re: {{ msg.subject }}{% endif %}
+        {% if msg.ack_state is defined and msg.ack_state and msg.ack_state != 'pending' %}
+        <span class="badge badge-xs ml-1
+            {% if msg.ack_state == 'received' %}badge-info
+            {% elif msg.ack_state == 'processing' %}badge-warning
+            {% elif msg.ack_state == 'completed' %}badge-success
+            {% elif msg.ack_state == 'failed' %}badge-error
+            {% endif %}">{{ msg.ack_state }}</span>
+        {% endif %}
+    </div>
 </div>
 {% endfor %}

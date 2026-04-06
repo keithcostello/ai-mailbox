@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     api_key TEXT NOT NULL UNIQUE,
     password_hash TEXT,
+    user_type TEXT NOT NULL DEFAULT 'human',
+    last_seen TIMESTAMP,
+    session_mode TEXT NOT NULL DEFAULT 'persistent',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS conversations (
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS conversation_participants (
     user_id TEXT NOT NULL REFERENCES users(id),
     joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_read_sequence INTEGER NOT NULL DEFAULT 0,
+    archived_at TIMESTAMP,
     PRIMARY KEY (conversation_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -49,6 +53,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content_type TEXT NOT NULL DEFAULT 'text/plain',
     idempotency_key TEXT,
     reply_to TEXT REFERENCES messages(id),
+    ack_state TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (conversation_id, sequence_number)
 );
@@ -821,3 +826,197 @@ class TestMessageListPartial:
         client.cookies.set("session", token)
         resp = client.get("/web/conversation/fake-id/messages")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5: ACK badges in thread view
+# ---------------------------------------------------------------------------
+
+class TestAckBadges:
+    """ACK state badges render in thread and message list views."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def _seed_with_ack(self, web_db, ack_state="received"):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        result = insert_message(web_db, conv_id, "keith", "Acknowledged message")
+        msg_id = result["id"]
+        web_db.execute(
+            "UPDATE messages SET ack_state = ? WHERE id = ?",
+            (ack_state, msg_id),
+        )
+        web_db.commit()
+        return conv_id, msg_id
+
+    def test_received_badge_in_thread(self, client, web_db):
+        conv_id, _ = self._seed_with_ack(web_db, "received")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "badge-info" in resp.text
+        assert "received" in resp.text
+
+    def test_processing_badge_in_thread(self, client, web_db):
+        conv_id, _ = self._seed_with_ack(web_db, "processing")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "badge-warning" in resp.text
+        assert "processing" in resp.text
+
+    def test_completed_badge_in_thread(self, client, web_db):
+        conv_id, _ = self._seed_with_ack(web_db, "completed")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "badge-success" in resp.text
+        assert "completed" in resp.text
+
+    def test_failed_badge_in_thread(self, client, web_db):
+        conv_id, _ = self._seed_with_ack(web_db, "failed")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "badge-error" in resp.text
+        assert "failed" in resp.text
+
+    def test_pending_no_badge(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "No ack yet")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        # pending messages should NOT show an ack badge
+        assert "badge-info" not in resp.text
+        assert "badge-warning" not in resp.text
+
+    def test_ack_badge_in_message_list_partial(self, client, web_db):
+        conv_id, _ = self._seed_with_ack(web_db, "completed")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}/messages")
+        assert "badge-success" in resp.text
+        assert "completed" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5: Archive button and toggle
+# ---------------------------------------------------------------------------
+
+class TestWebArchive:
+    """Archive/unarchive via web UI."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def _seed(self, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "Test message")
+        return conv_id
+
+    def test_archive_button_in_thread(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "Archive" in resp.text
+        assert f"/web/conversation/{conv_id}/archive" in resp.text
+
+    def test_archive_post_toggles_state(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post(f"/web/conversation/{conv_id}/archive")
+        assert resp.status_code == 200
+        assert "Unarchive" in resp.text
+
+    def test_unarchive_after_archive(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        # Archive
+        client.post(f"/web/conversation/{conv_id}/archive")
+        # Unarchive
+        resp = client.post(f"/web/conversation/{conv_id}/archive")
+        assert resp.status_code == 200
+        assert "Archive" in resp.text
+
+    def test_archive_requires_auth(self, client, web_db):
+        conv_id = self._seed(web_db)
+        resp = client.post(f"/web/conversation/{conv_id}/archive")
+        assert resp.status_code == 302
+
+    def test_show_archived_toggle_in_inbox(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "show-archived" in resp.text
+        assert "Show archived" in resp.text
+
+    def test_archived_conversations_filtered_by_default(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        # Archive the conversation
+        client.post(f"/web/conversation/{conv_id}/archive")
+        # Default conversation list should not show it
+        resp = client.get("/web/inbox/conversations")
+        assert conv_id not in resp.text
+
+    def test_archived_conversations_shown_with_param(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        client.post(f"/web/conversation/{conv_id}/archive")
+        resp = client.get("/web/inbox/conversations?archived=true")
+        assert "archived" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5: User directory
+# ---------------------------------------------------------------------------
+
+class TestUserDirectory:
+    """GET /web/users shows user directory."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_requires_auth(self, client):
+        resp = client.get("/web/users")
+        assert resp.status_code == 302
+
+    def test_shows_users_table(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/users")
+        assert resp.status_code == 200
+        assert "Users" in resp.text
+        assert "Keith" in resp.text
+        assert "Amy" in resp.text
+
+    def test_shows_user_type_badge(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/users")
+        assert "Human" in resp.text
+
+    def test_shows_online_status(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/users")
+        assert "offline" in resp.text
+
+    def test_users_link_in_navbar(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "/web/users" in resp.text
+        assert ">Users<" in resp.text

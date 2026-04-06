@@ -26,6 +26,9 @@
         {% if conv.type is defined and conv.type != 'direct' %}
         <span class="badge badge-outline badge-xs">Group</span>
         {% endif %}
+        {% if conv.archived is defined and conv.archived %}
+        <span class="badge badge-ghost badge-xs">archived</span>
+        {% endif %}
     </div>
     <div class="text-xs text-base-content/50 truncate mt-0.5">
         {% if conv.last_message_from %}{{ conv.last_message_from }}: {% endif %}{{ conv.last_message_preview }}

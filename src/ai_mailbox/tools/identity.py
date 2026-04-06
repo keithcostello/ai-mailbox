@@ -28,6 +28,9 @@ def tool_whoami(
     return {
         "user_id": user["id"],
         "display_name": user["display_name"],
+        "user_type": user.get("user_type", "human"),
+        "session_mode": user.get("session_mode", "persistent"),
+        "last_seen": user.get("last_seen"),
         "other_users": others,
         "unread_counts": unread,
     }

@@ -100,6 +100,8 @@ class TestErrorCodeRegistry:
             "GROUP_TOKEN_INVALID",
             # Sprint 4
             "INVALID_JSON",
+            # Sprint 5
+            "INVALID_STATE_TRANSITION",
         }
         assert set(ERROR_CODES.keys()) == expected
 

@@ -42,7 +42,7 @@ class SQLiteDB:
 
 
 class PostgresDB:
-    """PostgreSQL wrapper with auto-reconnect."""
+    """PostgreSQL wrapper with auto-reconnect on connection-level errors only."""
 
     def __init__(self, database_url: str):
         self._database_url = database_url
@@ -63,32 +63,35 @@ class PostgresDB:
             self._connect()
 
     def execute(self, sql: str, params: tuple = ()) -> Any:
+        import psycopg
         sql = sql.replace("?", "%s")
         self._ensure_conn()
         try:
             return self._conn.execute(sql, params)
-        except Exception:
+        except (psycopg.OperationalError, psycopg.InterfaceError):
             self._connect()
             return self._conn.execute(sql, params)
 
     def fetchone(self, sql: str, params: tuple = ()) -> dict | None:
+        import psycopg
         sql = sql.replace("?", "%s")
         self._ensure_conn()
         try:
             cur = self._conn.execute(sql, params)
             return cur.fetchone()
-        except Exception:
+        except (psycopg.OperationalError, psycopg.InterfaceError):
             self._connect()
             cur = self._conn.execute(sql, params)
             return cur.fetchone()
 
     def fetchall(self, sql: str, params: tuple = ()) -> list[dict]:
+        import psycopg
         sql = sql.replace("?", "%s")
         self._ensure_conn()
         try:
             cur = self._conn.execute(sql, params)
             return cur.fetchall()
-        except Exception:
+        except (psycopg.OperationalError, psycopg.InterfaceError):
             self._connect()
             cur = self._conn.execute(sql, params)
             return cur.fetchall()

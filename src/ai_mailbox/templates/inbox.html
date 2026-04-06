@@ -19,6 +19,11 @@
                 <option value="{{ p }}" {% if participant_filter == p %}selected{% endif %}>{{ p }}</option>
                 {% endfor %}
             </select>
+            <label class="label cursor-pointer gap-2 py-0">
+                <span class="label-text text-xs">Show archived</span>
+                <input type="checkbox" id="show-archived" class="toggle toggle-xs"
+                       onchange="refreshConversations()">
+            </label>
             <a href="#" onclick="clearFilters(event)" class="block text-center text-xs text-base-content/40 hover:text-base-content/60">Clear filters</a>
         </div>
         <div id="conversation-list" class="flex-1 overflow-y-auto"
@@ -42,7 +47,9 @@
 function refreshConversations() {
     var project = document.getElementById('project-filter').value;
     var participant = document.getElementById('participant-filter').value;
+    var archived = document.getElementById('show-archived').checked;
     var url = '/web/inbox/conversations?project=' + encodeURIComponent(project) + '&participant=' + encodeURIComponent(participant);
+    if (archived) url += '&archived=true';
     htmx.ajax('GET', url, '#conversation-list');
 }
 

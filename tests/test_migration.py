@@ -109,7 +109,7 @@ class TestNewSchemaOnEmptyDB:
 
     def test_conversation_participants_columns(self, db):
         cols = _get_columns(db._conn, "conversation_participants")
-        expected = {"conversation_id", "user_id", "joined_at", "last_read_sequence"}
+        expected = {"conversation_id", "user_id", "joined_at", "last_read_sequence", "archived_at"}
         assert cols == expected
 
     def test_sequence_number_unique_per_conversation(self, db):

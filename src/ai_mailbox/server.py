@@ -27,6 +27,9 @@ from ai_mailbox.tools.list_users import tool_list_users
 from ai_mailbox.tools.create_group import tool_create_group
 from ai_mailbox.tools.add_participant import tool_add_participant
 from ai_mailbox.tools.search import tool_search_messages
+from ai_mailbox.tools.acknowledge import tool_acknowledge
+from ai_mailbox.tools.archive import tool_archive_conversation
+from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
 
 logger = logging.getLogger(__name__)
@@ -149,9 +152,10 @@ def create_app() -> object:
     # --- MCP Tools (user identity from OAuth token via contextvars) ---
 
     def _get_user() -> str:
-        """Get authenticated user_id from OAuth context. Logs for isolation audit."""
+        """Get authenticated user_id from OAuth context. Updates last_seen."""
         uid = current_user_id.get("unknown")
         logger.info(f"Tool call: authenticated as user={uid}")
+        update_last_seen(db, uid)
         return uid
 
     @mcp.tool()
@@ -283,6 +287,22 @@ def create_app() -> object:
             db, user_id=uid, query=query,
             project=project, from_user=from_user,
             since=since, until=until, limit=limit,
+        )
+
+    @mcp.tool()
+    def acknowledge(message_id: str, state: str) -> dict:
+        """Acknowledge a message. States: received, processing, completed, failed. Forward-only transitions."""
+        uid = _get_user()
+        logger.info(f"acknowledge: user={uid} message_id={message_id} state={state}")
+        return tool_acknowledge(db, user_id=uid, message_id=message_id, state=state)
+
+    @mcp.tool()
+    def archive_conversation(conversation_id: str, archive: bool = True) -> dict:
+        """Archive or unarchive a conversation. Archive=True to archive, False to unarchive."""
+        uid = _get_user()
+        logger.info(f"archive_conversation: user={uid} conv={conversation_id} archive={archive}")
+        return tool_archive_conversation(
+            db, user_id=uid, conversation_id=conversation_id, archive=archive,
         )
 
     # --- Login page ---
