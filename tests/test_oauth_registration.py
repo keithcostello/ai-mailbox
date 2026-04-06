@@ -283,12 +283,11 @@ class TestOAuthCallbackIntegration:
 
         return token_resp, user_resp, emails_resp
 
-    def test_successful_registration(self, oauth_db, oauth_config):
-        """Full flow: initiate -> callback with mocked GitHub -> user created."""
-        from ai_mailbox.web_oauth import create_oauth_routes, find_or_create_oauth_user
+    def test_new_user_redirects_to_pick_handle(self, oauth_db, oauth_config):
+        """New user: callback redirects to pick-handle page, not inbox."""
+        from ai_mailbox.web_oauth import create_oauth_routes
         provider = MailboxOAuthProvider(db=oauth_db, jwt_secret=JWT_SECRET)
 
-        # Pre-invite the user
         oauth_db.execute(
             "INSERT INTO user_invites (email, invited_by) VALUES (?, ?)",
             ("testdev@example.com", "keith"),
@@ -299,37 +298,133 @@ class TestOAuthCallbackIntegration:
         app = Starlette(routes=routes)
         client = TestClient(app, follow_redirects=False)
 
-        # Step 1: Initiate
         resp = client.get("/web/oauth/github")
-        assert resp.status_code == 302
-
-        # Extract state from redirect URL
         import urllib.parse
         parsed = urllib.parse.urlparse(resp.headers["location"])
         params = urllib.parse.parse_qs(parsed.query)
         state = params["state"][0]
 
-        # Step 2: Mock the callback
         token_resp, user_resp, emails_resp = self._mock_github_responses()
 
         with patch("ai_mailbox.web_oauth.httpx") as mock_httpx:
             mock_httpx.post.return_value = token_resp
             mock_httpx.get.side_effect = [user_resp, emails_resp]
+            resp2 = client.get(f"/web/oauth/callback?code=testcode&state={state}")
 
+        assert resp2.status_code == 302
+        assert "/web/oauth/pick-handle" in resp2.headers["location"]
+
+    def test_pick_handle_creates_user(self, oauth_db, oauth_config):
+        """Full flow: callback -> pick-handle -> user created with chosen handle."""
+        from ai_mailbox.web_oauth import create_oauth_routes
+        provider = MailboxOAuthProvider(db=oauth_db, jwt_secret=JWT_SECRET)
+
+        oauth_db.execute(
+            "INSERT INTO user_invites (email, invited_by) VALUES (?, ?)",
+            ("testdev@example.com", "keith"),
+        )
+        oauth_db.commit()
+
+        routes = create_oauth_routes(oauth_db, provider, oauth_config, JWT_SECRET)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+
+        # Initiate + callback
+        resp = client.get("/web/oauth/github")
+        import urllib.parse
+        parsed = urllib.parse.urlparse(resp.headers["location"])
+        params = urllib.parse.parse_qs(parsed.query)
+        state = params["state"][0]
+
+        token_resp, user_resp, emails_resp = self._mock_github_responses()
+        with patch("ai_mailbox.web_oauth.httpx") as mock_httpx:
+            mock_httpx.post.return_value = token_resp
+            mock_httpx.get.side_effect = [user_resp, emails_resp]
+            resp2 = client.get(f"/web/oauth/callback?code=testcode&state={state}")
+
+        # Extract registration token from redirect
+        parsed2 = urllib.parse.urlparse(resp2.headers["location"])
+        reg_token = urllib.parse.parse_qs(parsed2.query)["token"][0]
+
+        # GET pick-handle page
+        resp3 = client.get(f"/web/oauth/pick-handle?token={reg_token}")
+        assert resp3.status_code == 200
+        assert "Pick" in resp3.text or "username" in resp3.text.lower()
+
+        # POST chosen handle
+        resp4 = client.post("/web/oauth/pick-handle", data={"token": reg_token, "handle": "testdev"})
+        assert resp4.status_code == 302
+        assert resp4.headers["location"] == "/web/inbox"
+
+        # User created with chosen handle
+        row = oauth_db.fetchone("SELECT * FROM users WHERE id = 'testdev'")
+        assert row is not None
+        assert row["email"] == "testdev@example.com"
+        assert row["auth_provider"] == "github"
+        assert row["display_name"] == "Test Developer"
+
+    def test_pick_handle_rejects_taken_name(self, oauth_db, oauth_config):
+        """Can't pick a handle that's already taken."""
+        from ai_mailbox.web_oauth import create_oauth_routes
+        provider = MailboxOAuthProvider(db=oauth_db, jwt_secret=JWT_SECRET)
+
+        oauth_db.execute(
+            "INSERT INTO user_invites (email, invited_by) VALUES (?, ?)",
+            ("testdev@example.com", "keith"),
+        )
+        oauth_db.commit()
+
+        routes = create_oauth_routes(oauth_db, provider, oauth_config, JWT_SECRET)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+
+        resp = client.get("/web/oauth/github")
+        import urllib.parse
+        parsed = urllib.parse.urlparse(resp.headers["location"])
+        state = urllib.parse.parse_qs(parsed.query)["state"][0]
+
+        token_resp, user_resp, emails_resp = self._mock_github_responses()
+        with patch("ai_mailbox.web_oauth.httpx") as mock_httpx:
+            mock_httpx.post.return_value = token_resp
+            mock_httpx.get.side_effect = [user_resp, emails_resp]
+            resp2 = client.get(f"/web/oauth/callback?code=testcode&state={state}")
+
+        parsed2 = urllib.parse.urlparse(resp2.headers["location"])
+        reg_token = urllib.parse.parse_qs(parsed2.query)["token"][0]
+
+        # "keith" already exists
+        resp4 = client.post("/web/oauth/pick-handle", data={"token": reg_token, "handle": "keith"})
+        assert resp4.status_code == 200
+        assert "taken" in resp4.text.lower()
+
+    def test_returning_user_skips_pick_handle(self, oauth_db, oauth_config):
+        """Existing user logs in directly without seeing pick-handle."""
+        from ai_mailbox.web_oauth import create_oauth_routes, create_oauth_user
+        provider = MailboxOAuthProvider(db=oauth_db, jwt_secret=JWT_SECRET)
+
+        # Pre-register user
+        create_oauth_user(
+            oauth_db, user_id="testdev", email="testdev@example.com",
+            name="Test Developer", avatar_url=None, provider="github",
+        )
+
+        routes = create_oauth_routes(oauth_db, provider, oauth_config, JWT_SECRET)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+
+        resp = client.get("/web/oauth/github")
+        import urllib.parse
+        parsed = urllib.parse.urlparse(resp.headers["location"])
+        state = urllib.parse.parse_qs(parsed.query)["state"][0]
+
+        token_resp, user_resp, emails_resp = self._mock_github_responses()
+        with patch("ai_mailbox.web_oauth.httpx") as mock_httpx:
+            mock_httpx.post.return_value = token_resp
+            mock_httpx.get.side_effect = [user_resp, emails_resp]
             resp2 = client.get(f"/web/oauth/callback?code=testcode&state={state}")
 
         assert resp2.status_code == 302
         assert resp2.headers["location"] == "/web/inbox"
-        # Session cookie should be set
-        assert "session" in resp2.cookies or any(
-            "session" in c for c in resp2.headers.getlist("set-cookie")
-        )
-
-        # User should exist in DB
-        row = oauth_db.fetchone("SELECT * FROM users WHERE email = ?", ("testdev@example.com",))
-        assert row is not None
-        assert row["auth_provider"] == "github"
-        assert row["display_name"] == "Test Developer"
 
     def test_uninvited_user_rejected(self, oauth_db, oauth_config):
         """Callback rejects user not in invite list."""
@@ -358,8 +453,7 @@ class TestOAuthCallbackIntegration:
         assert "not_invited" in resp2.headers["location"]
 
     def test_invite_not_required_when_disabled(self, oauth_db, oauth_config_no_github):
-        """When invite_only=False, any GitHub user can register."""
-        # Need to set github creds on the no-invite config
+        """When invite_only=False, any GitHub user can reach pick-handle."""
         config = Config(
             jwt_secret=JWT_SECRET,
             github_client_id="test-github-id",
@@ -387,7 +481,7 @@ class TestOAuthCallbackIntegration:
             resp2 = client.get(f"/web/oauth/callback?code=testcode&state={state}")
 
         assert resp2.status_code == 302
-        assert resp2.headers["location"] == "/web/inbox"
+        assert "/web/oauth/pick-handle" in resp2.headers["location"]
 
 
 # --- Config tests ---
