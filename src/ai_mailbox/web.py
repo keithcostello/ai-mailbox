@@ -772,6 +772,79 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             success=True,
         )
 
+    # --- Change Handle ---
+
+    async def web_change_handle(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _render_error(429, user_id=user_id)
+
+        form = await request.form()
+        new_handle = form.get("handle", "").strip().lower()
+
+        from ai_mailbox.web_oauth import validate_handle
+        error = validate_handle(db, new_handle)
+
+        if error:
+            user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+            user_dict = dict(user) if user else {}
+            ca = user_dict.get("created_at")
+            if ca and hasattr(ca, "strftime"):
+                user_dict["created_at"] = ca.strftime("%Y-%m-%d")
+            elif ca and isinstance(ca, str) and len(ca) > 10:
+                user_dict["created_at"] = ca[:10]
+            return _render(
+                "settings.html",
+                user_id=user_id,
+                display_name=user_dict.get("display_name", user_id),
+                user=user_dict,
+                error=error,
+            )
+
+        if new_handle == user_id:
+            return RedirectResponse(url="/web/settings", status_code=302)
+
+        # Clone user row with new ID, update all FK references, delete old row.
+        # This avoids FK constraint issues on both SQLite and PostgreSQL.
+        old_user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+        old = dict(old_user)
+        db.execute(
+            """INSERT INTO users (id, display_name, api_key, password_hash, user_type, last_seen, session_mode, email, auth_provider, avatar_url, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (new_handle, old["display_name"], f"oauth-{new_handle}",
+             old.get("password_hash") or "", old.get("user_type", "human"),
+             old.get("last_seen"), old.get("session_mode", "persistent"),
+             old.get("email"), old.get("auth_provider", "local"),
+             old.get("avatar_url"), old.get("created_at")),
+        )
+        # Update all references to point to new ID
+        db.execute("UPDATE conversation_participants SET user_id = ? WHERE user_id = ?", (new_handle, user_id))
+        db.execute("UPDATE messages SET from_user = ? WHERE from_user = ?", (new_handle, user_id))
+        db.execute("UPDATE conversations SET created_by = ? WHERE created_by = ?", (new_handle, user_id))
+        db.execute("UPDATE oauth_codes SET user_id = ? WHERE user_id = ?", (new_handle, user_id))
+        db.execute("UPDATE oauth_tokens SET user_id = ? WHERE user_id = ?", (new_handle, user_id))
+        db.execute("UPDATE user_invites SET invited_by = ? WHERE invited_by = ?", (new_handle, user_id))
+        # Delete old row
+        db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        db.commit()
+
+        # Issue new session cookie with new user_id
+        import time as _time
+        token = jwt.encode(
+            {"sub": new_handle, "iat": int(_time.time()), "exp": int(_time.time()) + 86400},
+            jwt_secret,
+            algorithm="HS256",
+        )
+        response = RedirectResponse(url="/web/settings", status_code=302)
+        response.set_cookie(
+            key="session", value=token, httponly=True,
+            samesite="lax", path="/web", max_age=86400,
+        )
+        return response
+
     # --- Health ---
 
     async def web_health(request: Request):
@@ -801,5 +874,6 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         Route("/web/users", web_users, methods=["GET"]),
         Route("/web/settings", web_settings_get, methods=["GET"]),
         Route("/web/settings", web_settings_post, methods=["POST"]),
+        Route("/web/settings/handle", web_change_handle, methods=["POST"]),
         Route("/web/health", web_health, methods=["GET"]),
     ]

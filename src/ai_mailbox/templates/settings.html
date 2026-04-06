@@ -15,6 +15,16 @@
     {% endif %}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body space-y-4">
+            <form method="POST" action="/web/settings/handle" class="flex items-end gap-2">
+                <div class="form-control flex-1">
+                    <label class="label"><span class="label-text text-xs text-base-content/60">Username</span></label>
+                    <div class="flex items-center gap-1">
+                        <span class="text-base-content/40">@</span>
+                        <input type="text" name="handle" value="{{ user.id }}" class="input input-bordered input-sm w-full" maxlength="30" pattern="[a-z0-9_-]+" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-outline btn-sm">Change</button>
+            </form>
             <form method="POST" action="/web/settings" class="flex items-end gap-2">
                 <div class="form-control flex-1">
                     <label class="label"><span class="label-text text-xs text-base-content/60">Display Name</span></label>

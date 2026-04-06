@@ -215,3 +215,81 @@ class TestSettingsPost:
         settings_client.post("/web/settings", data={"display_name": "  Keith  "})
         row = settings_db.fetchone("SELECT display_name FROM users WHERE id = 'keith'")
         assert row["display_name"] == "Keith"
+
+
+class TestChangeHandle:
+    """POST /web/settings/handle changes the user's @handle."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_requires_auth(self, settings_client):
+        resp = settings_client.post("/web/settings/handle", data={"handle": "newname"})
+        assert resp.status_code == 302
+
+    def test_changes_handle(self, settings_client, settings_db):
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        resp = settings_client.post("/web/settings/handle", data={"handle": "keithm"})
+        assert resp.status_code == 302
+        # Old ID gone
+        assert settings_db.fetchone("SELECT id FROM users WHERE id = 'keith'") is None
+        # New ID exists
+        row = settings_db.fetchone("SELECT * FROM users WHERE id = 'keithm'")
+        assert row is not None
+        assert row["display_name"] == "Keith"
+
+    def test_updates_messages_foreign_key(self, settings_client, settings_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(settings_db, "keith", "amy", "general")
+        insert_message(settings_db, conv_id, "keith", "test msg")
+
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        settings_client.post("/web/settings/handle", data={"handle": "keithm"})
+
+        msg = settings_db.fetchone("SELECT from_user FROM messages WHERE conversation_id = ?", (conv_id,))
+        assert msg["from_user"] == "keithm"
+
+    def test_updates_conversation_participants(self, settings_client, settings_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation
+        conv_id = find_or_create_direct_conversation(settings_db, "keith", "amy", "general")
+
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        settings_client.post("/web/settings/handle", data={"handle": "keithm"})
+
+        cp = settings_db.fetchone(
+            "SELECT user_id FROM conversation_participants WHERE conversation_id = ? AND user_id = 'keithm'",
+            (conv_id,),
+        )
+        assert cp is not None
+
+    def test_rejects_taken_handle(self, settings_client, settings_db):
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        resp = settings_client.post("/web/settings/handle", data={"handle": "amy"})
+        # Should stay on settings with error, not redirect
+        assert resp.status_code == 200
+        assert "taken" in resp.text.lower()
+        # keith should still exist
+        assert settings_db.fetchone("SELECT id FROM users WHERE id = 'keith'") is not None
+
+    def test_rejects_invalid_handle(self, settings_client, settings_db):
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        resp = settings_client.post("/web/settings/handle", data={"handle": "A B C"})
+        assert resp.status_code == 200
+        assert "lowercase" in resp.text.lower() or "letters" in resp.text.lower()
+
+    def test_new_session_cookie_set(self, settings_client, settings_db):
+        token = _make_session_cookie("keith")
+        settings_client.cookies.set("session", token)
+        resp = settings_client.post("/web/settings/handle", data={"handle": "keithm"})
+        assert resp.status_code == 302
+        # Should have a new session cookie with the new user_id
+        session_cookie = resp.cookies.get("session")
+        if session_cookie:
+            payload = jwt.decode(session_cookie, JWT_SECRET, algorithms=["HS256"])
+            assert payload["sub"] == "keithm"
