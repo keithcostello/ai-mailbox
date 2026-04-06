@@ -718,11 +718,18 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
 
         display_name = _get_user_display_name(db, user_id)
         user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+        user_dict = dict(user) if user else {}
+        # Normalize created_at for template (PG returns datetime, SQLite returns str)
+        ca = user_dict.get("created_at")
+        if ca and hasattr(ca, "strftime"):
+            user_dict["created_at"] = ca.strftime("%Y-%m-%d")
+        elif ca and isinstance(ca, str) and len(ca) > 10:
+            user_dict["created_at"] = ca[:10]
         return _render(
             "settings.html",
             user_id=user_id,
             display_name=display_name,
-            user=dict(user) if user else {},
+            user=user_dict,
         )
 
     async def web_settings_post(request: Request):

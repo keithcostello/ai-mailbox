@@ -42,7 +42,7 @@
                 </div>
                 <div class="flex justify-between">
                     <span class="text-base-content/60">Member Since</span>
-                    <span>{{ user.created_at[:10] if user.created_at else '—' }}</span>
+                    <span>{{ user.created_at or '—' }}</span>
                 </div>
             </div>
         </div>
