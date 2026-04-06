@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS users (
     user_type TEXT NOT NULL DEFAULT 'human',
     last_seen TIMESTAMP,
     session_mode TEXT NOT NULL DEFAULT 'persistent',
+    email TEXT,
+    auth_provider TEXT NOT NULL DEFAULT 'local',
+    avatar_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -92,6 +95,15 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_refresh ON oauth_tokens(refresh_token);
+
+CREATE TABLE IF NOT EXISTS user_invites (
+    email TEXT PRIMARY KEY,
+    invited_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email_provider ON users(email, auth_provider);
 """
 
 

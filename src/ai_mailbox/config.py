@@ -28,6 +28,10 @@ class Config:
     amy_password: str = ""
     allowed_origins: str = ""
     log_level: str = "INFO"
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    invite_only: bool = True
+    invited_emails: str = ""
 
     def validate(self) -> List[str]:
         """Validate configuration. Returns warnings list or raises ConfigurationError."""
@@ -69,6 +73,11 @@ class Config:
                 unique.append(o)
         return unique
 
+    @property
+    def github_oauth_available(self) -> bool:
+        """True when GitHub OAuth client credentials are configured."""
+        return bool(self.github_client_id and self.github_client_secret)
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
@@ -79,4 +88,8 @@ class Config:
             amy_password=os.environ.get("MAILBOX_AMY_PASSWORD", ""),
             allowed_origins=os.environ.get("MAILBOX_CORS_ORIGINS", ""),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
+            github_client_id=os.environ.get("GITHUB_CLIENT_ID", ""),
+            github_client_secret=os.environ.get("GITHUB_CLIENT_SECRET", ""),
+            invite_only=os.environ.get("MAILBOX_INVITE_ONLY", "true").lower() in ("true", "1", "yes"),
+            invited_emails=os.environ.get("MAILBOX_INVITED_EMAILS", ""),
         )

@@ -157,7 +157,7 @@ def _htmx_error(status_code: int, message: str | None = None) -> HTMLResponse:
     )
 
 
-def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secret: str) -> list[Route]:
+def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secret: str, *, github_oauth: bool = False) -> list[Route]:
     """Create web UI routes. Returns list of Starlette Route objects."""
 
     from ai_mailbox.db.queries import (
@@ -196,11 +196,19 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
 
     # --- Login / Logout ---
 
+    _OAUTH_ERRORS = {
+        "not_invited": "Your email is not on the invite list. Contact an admin for access.",
+        "oauth_failed": "Authentication failed. Please try again.",
+        "no_email": "Could not retrieve a verified email from your account.",
+    }
+
     async def web_login_get(request: Request):
         user_id = _require_auth(request)
         if user_id:
             return RedirectResponse(url="/web/inbox", status_code=302)
-        return _render("login.html", error=None, user_id=None)
+        error_code = request.query_params.get("error", "")
+        error = _OAUTH_ERRORS.get(error_code)
+        return _render("login.html", error=error, user_id=None, github_oauth=github_oauth)
 
     async def web_login_post(request: Request):
         ip = _client_ip(request)
@@ -209,6 +217,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
                 "login.html",
                 error="Too many login attempts. Try again in 1 minute.",
                 user_id=None,
+                github_oauth=github_oauth,
                 status_code=429,
             )
 
@@ -218,7 +227,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
 
         user_id = provider.authenticate_user(username, password)
         if user_id is None:
-            return _render("login.html", error="Invalid username or password", user_id=None)
+            return _render("login.html", error="Invalid username or password", user_id=None, github_oauth=github_oauth)
 
         import time
         token = jwt.encode(
@@ -697,6 +706,65 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             users=users,
         )
 
+    # --- Settings ---
+
+    async def web_settings_get(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _render_error(429, user_id=user_id)
+
+        display_name = _get_user_display_name(db, user_id)
+        user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+        return _render(
+            "settings.html",
+            user_id=user_id,
+            display_name=display_name,
+            user=dict(user) if user else {},
+        )
+
+    async def web_settings_post(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _render_error(429, user_id=user_id)
+
+        form = await request.form()
+        new_name = form.get("display_name", "").strip()
+
+        user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+        user_dict = dict(user) if user else {}
+
+        if not new_name or len(new_name) > 100:
+            return _render(
+                "settings.html",
+                user_id=user_id,
+                display_name=user_dict.get("display_name", user_id),
+                user=user_dict,
+                error="Invalid display name.",
+            )
+
+        db.execute(
+            "UPDATE users SET display_name = ? WHERE id = ?",
+            (new_name, user_id),
+        )
+        db.commit()
+
+        # Re-read updated user
+        user = db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))
+        user_dict = dict(user) if user else {}
+        return _render(
+            "settings.html",
+            user_id=user_id,
+            display_name=new_name,
+            user=user_dict,
+            success=True,
+        )
+
     # --- Health ---
 
     async def web_health(request: Request):
@@ -704,7 +772,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         user_count = row["cnt"] if row else 0
         health = {
             "status": "healthy",
-            "version": "0.4.0",
+            "version": "0.6.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         }
@@ -724,5 +792,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         Route("/web/search", web_search, methods=["GET"]),
         Route("/web/conversation/{conv_id}/messages", web_message_list, methods=["GET"]),
         Route("/web/users", web_users, methods=["GET"]),
+        Route("/web/settings", web_settings_get, methods=["GET"]),
+        Route("/web/settings", web_settings_post, methods=["POST"]),
         Route("/web/health", web_health, methods=["GET"]),
     ]

@@ -31,6 +31,7 @@ from ai_mailbox.tools.acknowledge import tool_acknowledge
 from ai_mailbox.tools.archive import tool_archive_conversation
 from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
+from ai_mailbox.web_oauth import create_oauth_routes
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def _make_postgres_db(database_url: str) -> PostgresDB:
 
 
 def _seed_users(db, config: Config) -> None:
-    """Upsert users with password hashes."""
+    """Upsert users with password hashes and seed invites."""
     users = [
         ("keith", "Keith", config.keith_password),
         ("amy", "Amy", config.amy_password),
@@ -80,6 +81,19 @@ def _seed_users(db, config: Config) -> None:
             )
     db.commit()
     logger.info(f"Seeded {len([u for u in users if u[2]])} users")
+
+    # Seed invites from MAILBOX_INVITED_EMAILS
+    if config.invited_emails:
+        emails = [e.strip() for e in config.invited_emails.split(",") if e.strip()]
+        for email in emails:
+            existing = db.fetchone("SELECT email FROM user_invites WHERE email = ?", (email,))
+            if not existing:
+                db.execute(
+                    "INSERT INTO user_invites (email, invited_by) VALUES (?, ?)",
+                    (email, "keith"),
+                )
+        db.commit()
+        logger.info(f"Seeded {len(emails)} invite(s)")
 
 
 def _get_user_from_request(request: StarletteRequest, provider: MailboxOAuthProvider) -> str | None:
@@ -362,19 +376,27 @@ def create_app() -> object:
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
-            "version": "0.4.0",
+            "version": "0.6.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         })
 
     # Web UI routes (Jinja2 + HTMX + Tailwind)
-    web_routes = create_web_routes(db, provider, config.jwt_secret)
+    web_routes = create_web_routes(
+        db, provider, config.jwt_secret,
+        github_oauth=config.github_oauth_available,
+    )
+
+    # OAuth routes (GitHub login)
+    oauth_routes = []
+    if config.github_oauth_available:
+        oauth_routes = create_oauth_routes(db, provider, config, config.jwt_secret)
 
     mcp._custom_starlette_routes = [
         Route("/health", health),
         Route("/login", login_get, methods=["GET"]),
         Route("/login", login_post, methods=["POST"]),
-    ] + web_routes
+    ] + oauth_routes + web_routes
 
     # Build ASGI app
     app = mcp.streamable_http_app()

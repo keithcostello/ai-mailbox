@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS users (
     user_type TEXT NOT NULL DEFAULT 'human',
     last_seen TIMESTAMP,
     session_mode TEXT NOT NULL DEFAULT 'persistent',
+    email TEXT,
+    auth_provider TEXT NOT NULL DEFAULT 'local',
+    avatar_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS conversations (
@@ -73,6 +76,12 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     user_id TEXT NOT NULL REFERENCES users(id),
     scopes TEXT, expires_at INTEGER, refresh_token TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_invites (
+    email TEXT PRIMARY KEY,
+    invited_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used_at TIMESTAMP
 );
 """
 
@@ -278,7 +287,7 @@ class TestHealthPage:
 
     def test_health_page_shows_version(self, client):
         resp = client.get("/web/health")
-        assert "0.4.0" in resp.text
+        assert "0.6.0" in resp.text
 
     def test_health_page_shows_user_count(self, client):
         resp = client.get("/web/health")
@@ -1016,3 +1025,65 @@ class TestUserDirectory:
         resp = client.get("/web/inbox")
         assert "/web/users" in resp.text
         assert ">Users<" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6: Login page OAuth buttons
+# ---------------------------------------------------------------------------
+
+class TestLoginOAuthButtons:
+    """Login page shows GitHub button when OAuth is configured."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_no_github_button_by_default(self, client):
+        """Default fixture has no github_oauth=True, so no button."""
+        resp = client.get("/web/login")
+        assert "Sign in with GitHub" not in resp.text
+
+    def test_github_button_when_enabled(self, web_db):
+        provider = MailboxOAuthProvider(db=web_db, jwt_secret=JWT_SECRET)
+        routes = create_web_routes(web_db, provider, JWT_SECRET, github_oauth=True)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+        resp = client.get("/web/login")
+        assert "Sign in with GitHub" in resp.text
+        assert "/web/oauth/github" in resp.text
+
+    def test_password_form_always_present(self, web_db):
+        provider = MailboxOAuthProvider(db=web_db, jwt_secret=JWT_SECRET)
+        routes = create_web_routes(web_db, provider, JWT_SECRET, github_oauth=True)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+        resp = client.get("/web/login")
+        assert "username" in resp.text.lower()
+        assert "password" in resp.text.lower()
+
+    def test_oauth_error_displayed(self, web_db):
+        provider = MailboxOAuthProvider(db=web_db, jwt_secret=JWT_SECRET)
+        routes = create_web_routes(web_db, provider, JWT_SECRET, github_oauth=True)
+        app = Starlette(routes=routes)
+        client = TestClient(app, follow_redirects=False)
+        resp = client.get("/web/login?error=not_invited")
+        assert "invite list" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6: Settings link in navbar
+# ---------------------------------------------------------------------------
+
+class TestSettingsNavbar:
+    """Navbar has Settings link."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_settings_link_in_navbar(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "/web/settings" in resp.text
+        assert "Settings" in resp.text

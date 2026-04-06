@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Settings - AI Mailbox{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto mt-8 px-4">
+    <h2 class="text-xl font-semibold mb-4">Settings</h2>
+    {% if success %}
+    <div class="alert alert-success text-sm mb-4">
+        <span>Display name updated.</span>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-error text-sm mb-4">
+        <span>{{ error }}</span>
+    </div>
+    {% endif %}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body space-y-4">
+            <form method="POST" action="/web/settings" class="flex items-end gap-2">
+                <div class="form-control flex-1">
+                    <label class="label"><span class="label-text text-xs text-base-content/60">Display Name</span></label>
+                    <input type="text" name="display_name" value="{{ user.display_name }}" class="input input-bordered input-sm w-full" maxlength="100" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </form>
+            <div class="divider my-1"></div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-base-content/60">Email</span>
+                    <span>{{ user.email or '—' }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-base-content/60">Auth Provider</span>
+                    <span>{{ user.auth_provider }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-base-content/60">User Type</span>
+                    <span>{{ user.user_type }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-base-content/60">Session Mode</span>
+                    <span>{{ user.session_mode }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-base-content/60">Member Since</span>
+                    <span>{{ user.created_at[:10] if user.created_at else '—' }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
