@@ -1,0 +1,53 @@
+{% if conversations %}
+<div class="ui relaxed divided list">
+    {% for conv in conversations %}
+    <a class="item" style="cursor: pointer; padding: 10px;"
+       hx-get="/web/conversation/{{ conv.conversation_id }}"
+       hx-target="#main-content"
+       hx-push-url="true">
+        <div class="content">
+            <div class="header">
+                {% set others = [] %}
+                {% for p in conv.participants if p != user_id %}
+                    {% if others.append(p) %}{% endif %}
+                {% endfor %}
+                {{ others[:3] | join(', ') }}
+                {% if others | length > 3 %}
+                <span style="color: #999;"> +{{ others | length - 3 }} more</span>
+                {% endif %}
+                {% if conv.unread_count > 0 %}
+                <div class="ui red circular label" style="float: right; font-size: 0.7em;">{{ conv.unread_count }}</div>
+                {% endif %}
+            </div>
+            <div class="description" style="margin-top: 4px;">
+                {% if conv.project %}
+                <div class="ui tiny label">{{ conv.project }}</div>
+                {% endif %}
+                <span style="color: #888; font-size: 0.9em;">
+                    {% if conv.last_message_from %}{{ conv.last_message_from }}: {% endif %}{{ conv.last_message_preview }}
+                </span>
+            </div>
+            <div class="extra" style="color: #bbb; font-size: 0.8em; margin-top: 2px;">
+                {{ conv.last_message_at | relative_time }}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% if has_more %}
+<div style="text-align: center; padding: 10px;">
+    <button class="ui basic small button"
+            hx-get="/web/inbox/conversations?page={{ page + 1 }}{% if project_filter %}&project={{ project_filter }}{% endif %}{% if participant_filter %}&participant={{ participant_filter }}{% endif %}"
+            hx-target="#conversation-list"
+            hx-swap="innerHTML">
+        Load more
+    </button>
+</div>
+{% endif %}
+
+{% else %}
+<div style="padding: 20px; text-align: center; color: #999;">
+    No conversations found
+</div>
+{% endif %}

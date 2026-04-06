@@ -83,7 +83,7 @@ async def test_web_login_page_renders():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/web/login")
     assert resp.status_code == 200
-    assert "tailwindcss" in resp.text
+    assert "semantic" in resp.text.lower()
     assert "htmx.org" in resp.text
 
 

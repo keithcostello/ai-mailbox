@@ -472,6 +472,30 @@ def get_thread(db: DBConnection, message_id: str) -> list[dict]:
 # User queries
 # ---------------------------------------------------------------------------
 
+def get_user_projects(db: DBConnection, user_id: str) -> list[str]:
+    """Return distinct project names for user's conversations."""
+    rows = db.fetchall(
+        """SELECT DISTINCT c.project FROM conversations c
+           JOIN conversation_participants cp ON c.id = cp.conversation_id
+           WHERE cp.user_id = ? AND c.project IS NOT NULL
+           ORDER BY c.project""",
+        (user_id,),
+    )
+    return [r["project"] for r in rows]
+
+
+def get_user_conversation_partners(db: DBConnection, user_id: str) -> list[str]:
+    """Return distinct user_ids the user shares conversations with."""
+    rows = db.fetchall(
+        """SELECT DISTINCT cp2.user_id FROM conversation_participants cp1
+           JOIN conversation_participants cp2 ON cp1.conversation_id = cp2.conversation_id
+           WHERE cp1.user_id = ? AND cp2.user_id != ?
+           ORDER BY cp2.user_id""",
+        (user_id, user_id),
+    )
+    return [r["user_id"] for r in rows]
+
+
 def get_user(db: DBConnection, user_id: str) -> dict | None:
     """Fetch user by ID."""
     return db.fetchone("SELECT * FROM users WHERE id = ?", (user_id,))

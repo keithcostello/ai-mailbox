@@ -1,74 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Inbox - AI Mailbox{% endblock %}
 {% block content %}
-<h1 class="text-xl font-semibold text-gray-900 mb-6">Inbox</h1>
-
-{% if conversations %}
-<div class="bg-white shadow rounded-lg divide-y divide-gray-200">
-    {% for conv in conversations %}
-    <div class="px-4 py-3 hover:bg-gray-50">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3 min-w-0">
-                <span class="text-xs font-medium px-2 py-0.5 rounded
-                    {% if conv.type == 'direct' %}bg-blue-100 text-blue-700
-                    {% elif conv.type == 'project_group' %}bg-green-100 text-green-700
-                    {% else %}bg-purple-100 text-purple-700{% endif %}">
-                    {% if conv.type == 'direct' %}DM
-                    {% elif conv.type == 'project_group' %}Group
-                    {% else %}Team{% endif %}
-                </span>
-                <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm font-medium text-gray-900 truncate">
-                            {% set display_names = conv.participants[:3] | join(', ') %}
-                            {{ display_names }}
-                            {% if conv.participants | length > 3 %}
-                            <span class="text-gray-400">+{{ conv.participants | length - 3 }} more</span>
-                            {% endif %}
-                        </span>
-                        {% if conv.project %}
-                        <span class="text-xs text-gray-500">#{{ conv.project }}</span>
-                        {% endif %}
-                    </div>
-                    <p class="text-sm text-gray-500 truncate">
-                        {% if conv.last_message_from %}<span class="font-medium">{{ conv.last_message_from }}:</span> {% endif %}{{ conv.last_message_preview }}
-                    </p>
+<div class="ui grid full-height" style="margin: 0;">
+    <!-- Sidebar: conversation list with filters -->
+    <div class="four wide column scroll-y" id="sidebar" style="background: #fff; border-right: 1px solid #ddd; padding: 0;">
+        <div style="padding: 10px;">
+            <div class="ui mini form">
+                <div class="field">
+                    <select class="ui compact selection dropdown" id="project-filter" style="width: 100%;">
+                        <option value="">All projects</option>
+                        {% for p in projects %}
+                        <option value="{{ p }}" {% if project_filter == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <select class="ui compact selection dropdown" id="participant-filter" style="width: 100%;">
+                        <option value="">All people</option>
+                        {% for p in partners %}
+                        <option value="{{ p }}" {% if participant_filter == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
-            <div class="flex items-center gap-3 flex-shrink-0 ml-4">
-                {% if conv.unread_count > 0 %}
-                <span class="inline-flex items-center justify-center px-2 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
-                    {{ conv.unread_count }}
-                </span>
-                {% endif %}
-                <span class="text-xs text-gray-400 whitespace-nowrap">{{ conv.last_message_at | relative_time }}</span>
-            </div>
+        </div>
+        <div class="ui divider" style="margin: 0;"></div>
+        <div id="conversation-list"
+             hx-get="/web/inbox/conversations{% if project_filter %}?project={{ project_filter }}{% endif %}{% if participant_filter %}&participant={{ participant_filter }}{% endif %}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
         </div>
     </div>
-    {% endfor %}
+
+    <!-- Main content area -->
+    <div class="twelve wide column scroll-y" id="main-content" style="padding: 20px;">
+        {% if thread_content %}
+        {{ thread_content | safe }}
+        {% else %}
+        {% include "partials/empty_state.html" %}
+        {% endif %}
+    </div>
 </div>
 
-{# Pagination #}
-<div class="flex justify-between items-center mt-4">
-    {% if has_previous %}
-    <a href="/web/inbox?page={{ page - 1 }}" class="text-sm text-blue-600 hover:text-blue-800">Previous</a>
-    {% else %}
-    <span></span>
-    {% endif %}
+<script>
+$(function() {
+    $('.ui.dropdown').dropdown();
 
-    <span class="text-sm text-gray-500">Page {{ page }}</span>
-
-    {% if has_more %}
-    <a href="/web/inbox?page={{ page + 1 }}" class="text-sm text-blue-600 hover:text-blue-800">Next</a>
-    {% else %}
-    <span></span>
-    {% endif %}
-</div>
-
-{% else %}
-<div class="bg-white shadow rounded-lg p-12 text-center">
-    <p class="text-gray-500 text-lg">No conversations yet</p>
-    <p class="text-gray-400 text-sm mt-2">Messages sent via MCP tools will appear here.</p>
-</div>
-{% endif %}
+    // Wire filter dropdowns to refresh conversation list
+    $('#project-filter').on('change', function() {
+        var project = $(this).val();
+        var participant = $('#participant-filter').val();
+        var url = '/web/inbox/conversations?project=' + encodeURIComponent(project) + '&participant=' + encodeURIComponent(participant);
+        htmx.ajax('GET', url, '#conversation-list');
+    });
+    $('#participant-filter').on('change', function() {
+        var project = $('#project-filter').val();
+        var participant = $(this).val();
+        var url = '/web/inbox/conversations?project=' + encodeURIComponent(project) + '&participant=' + encodeURIComponent(participant);
+        htmx.ajax('GET', url, '#conversation-list');
+    });
+});
+</script>
 {% endblock %}

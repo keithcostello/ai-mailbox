@@ -129,9 +129,17 @@ class TestLoginPage:
         assert "username" in resp.text.lower()
         assert "password" in resp.text.lower()
 
-    def test_login_page_has_tailwind(self, client):
+    def test_login_page_has_semantic_ui(self, client):
         resp = client.get("/web/login")
-        assert "tailwindcss" in resp.text
+        assert "semantic" in resp.text.lower()
+
+    def test_login_page_no_tailwind(self, client):
+        resp = client.get("/web/login")
+        assert "tailwindcss" not in resp.text
+
+    def test_login_page_has_jquery(self, client):
+        resp = client.get("/web/login")
+        assert "jquery" in resp.text.lower()
 
     def test_login_page_has_htmx(self, client):
         resp = client.get("/web/login")
@@ -186,14 +194,13 @@ class TestSessionEnforcement:
 
 
 class TestInboxPage:
-    """GET /web/inbox renders conversation list."""
+    """GET /web/inbox renders two-panel layout."""
 
     def test_inbox_renders_with_session(self, client):
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
         assert resp.status_code == 200
-        assert "Inbox" in resp.text
 
     def test_inbox_shows_display_name(self, client):
         token = _make_session_cookie("keith")
@@ -201,21 +208,24 @@ class TestInboxPage:
         resp = client.get("/web/inbox")
         assert "Keith" in resp.text
 
-    def test_inbox_empty_state(self, client):
+    def test_inbox_has_sidebar(self, client):
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
-        assert "No conversations yet" in resp.text
+        assert 'id="sidebar"' in resp.text
+        assert 'id="conversation-list"' in resp.text
 
-    def test_inbox_shows_conversations(self, client, web_db):
-        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
-        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
-        insert_message(web_db, conv_id, "amy", "Hello Keith")
-
+    def test_inbox_has_main_content(self, client):
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
-        assert "Hello Keith" in resp.text
+        assert 'id="main-content"' in resp.text
+
+    def test_inbox_has_empty_state(self, client):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "Select a conversation" in resp.text
 
     def test_inbox_has_nav_bar(self, client):
         token = _make_session_cookie("keith")
@@ -223,6 +233,12 @@ class TestInboxPage:
         resp = client.get("/web/inbox")
         assert "AI Mailbox" in resp.text
         assert "Logout" in resp.text
+
+    def test_inbox_has_compose_link(self, client):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "Compose" in resp.text
 
 
 class TestLogout:
@@ -293,93 +309,291 @@ class TestLoginRateLimit:
 # Sprint 2: Inbox pagination
 # ---------------------------------------------------------------------------
 
-class TestInboxPagination:
-    """GET /web/inbox supports page query parameter."""
+class TestConversationListPartial:
+    """GET /web/inbox/conversations returns sidebar content."""
 
-    def _seed_conversations(self, web_db, count):
+    def _seed(self, web_db, count=3):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        ids = []
         for i in range(count):
             conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", f"proj-{i:03d}")
             insert_message(web_db, conv_id, "amy", f"Message in proj-{i:03d}")
+            ids.append(conv_id)
+        return ids
 
-    def test_pagination_links_absent_for_small_inbox(self, client, web_db):
-        self._seed_conversations(web_db, 3)
+    def test_requires_auth(self, client):
+        resp = client.get("/web/inbox/conversations")
+        assert resp.status_code == 302
+
+    def test_returns_conversations(self, client, web_db):
+        self._seed(web_db)
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
+        resp = client.get("/web/inbox/conversations")
         assert resp.status_code == 200
-        assert "Next" not in resp.text
-        assert "Previous" not in resp.text
-
-    def test_next_link_when_more_exist(self, client, web_db):
-        self._seed_conversations(web_db, 25)
-        token = _make_session_cookie("keith")
-        client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        assert "Next" in resp.text
-        assert "page=2" in resp.text
-
-    def test_previous_link_on_page_2(self, client, web_db):
-        self._seed_conversations(web_db, 25)
-        token = _make_session_cookie("keith")
-        client.cookies.set("session", token)
-        resp = client.get("/web/inbox?page=2")
-        assert "Previous" in resp.text
-        assert "page=1" in resp.text
-
-    def test_page_number_displayed(self, client, web_db):
-        self._seed_conversations(web_db, 3)
-        token = _make_session_cookie("keith")
-        client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        assert "Page 1" in resp.text
-
-
-# ---------------------------------------------------------------------------
-# Sprint 2: Inbox real data rendering
-# ---------------------------------------------------------------------------
-
-class TestInboxRealData:
-    """Inbox displays real conversation data with unread badges."""
+        assert "amy" in resp.text.lower()
 
     def test_shows_unread_badge(self, client, web_db):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
         conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
-        insert_message(web_db, conv_id, "amy", "Unread message 1")
-        insert_message(web_db, conv_id, "amy", "Unread message 2")
-
+        insert_message(web_db, conv_id, "amy", "Unread 1")
+        insert_message(web_db, conv_id, "amy", "Unread 2")
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        # Should show unread count badge with "2"
+        resp = client.get("/web/inbox/conversations")
         assert "2" in resp.text
 
-    def test_shows_project_tag(self, client, web_db):
+    def test_shows_project_label(self, client, web_db):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
         conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "deployment")
         insert_message(web_db, conv_id, "amy", "Deploy ready")
-
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        assert "#deployment" in resp.text
+        resp = client.get("/web/inbox/conversations")
+        assert "deployment" in resp.text
 
-    def test_shows_conversation_type_badge(self, client, web_db):
+    def test_filter_by_project(self, client, web_db):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
-        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
-        insert_message(web_db, conv_id, "amy", "Direct msg")
-
+        find_or_create_direct_conversation(web_db, "amy", "keith", "general")
+        conv2 = find_or_create_direct_conversation(web_db, "amy", "keith", "alerts")
+        insert_message(web_db, conv2, "amy", "Alert msg")
+        # Also seed general with a message
+        conv1 = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
+        insert_message(web_db, conv1, "amy", "General msg")
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        assert "DM" in resp.text
+        resp = client.get("/web/inbox/conversations?project=alerts")
+        assert "Alert msg" in resp.text
+        assert "General msg" not in resp.text
 
-    def test_shows_last_message_sender(self, client, web_db):
+    def test_pagination_load_more(self, client, web_db):
+        self._seed(web_db, 25)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox/conversations")
+        assert "Load more" in resp.text
+
+    def test_empty_state(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox/conversations")
+        assert "No conversations found" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Thread view
+# ---------------------------------------------------------------------------
+
+class TestThreadView:
+    """GET /web/conversation/{conv_id} shows messages."""
+
+    def _seed_conversation(self, web_db):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
-        conv_id = find_or_create_direct_conversation(web_db, "amy", "keith", "general")
-        insert_message(web_db, conv_id, "amy", "Latest from amy")
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "Hello Amy")
+        insert_message(web_db, conv_id, "amy", "Hi Keith")
+        insert_message(web_db, conv_id, "keith", "How are you?")
+        return conv_id
 
+    def test_requires_auth(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert resp.status_code == 302
+
+    def test_shows_messages(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
-        resp = client.get("/web/inbox")
-        assert "amy:" in resp.text.lower()
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert resp.status_code == 200
+        assert "Hello Amy" in resp.text
+        assert "Hi Keith" in resp.text
+        assert "How are you?" in resp.text
+
+    def test_shows_message_authors(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert "keith" in resp.text
+        assert "amy" in resp.text
+
+    def test_marks_as_read(self, client, web_db):
+        from ai_mailbox.db.queries import get_last_read_sequence
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        # Before viewing: cursor is 0
+        assert get_last_read_sequence(web_db, conv_id, "keith") == 0
+        client.get(f"/web/conversation/{conv_id}")
+        # After viewing: cursor advanced to 3
+        assert get_last_read_sequence(web_db, conv_id, "keith") == 3
+
+    def test_has_reply_form(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert "Reply" in resp.text
+        assert "textarea" in resp.text.lower()
+
+    def test_nonexistent_conversation(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/conversation/nonexistent-id")
+        assert resp.status_code == 404
+
+    def test_non_participant_denied(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        # Create bob
+        web_db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "bob-key"),
+        )
+        web_db._conn.commit()
+        pw_hash = hash_password("bobpass")
+        web_db._conn.execute("UPDATE users SET password_hash = ? WHERE id = 'bob'", (pw_hash,))
+        web_db._conn.commit()
+        token = _make_session_cookie("bob")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert resp.status_code == 403
+
+    def test_shows_project_label(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}")
+        assert "general" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Reply
+# ---------------------------------------------------------------------------
+
+class TestReply:
+    """POST /web/conversation/{conv_id}/reply posts a reply."""
+
+    def _seed_conversation(self, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "amy", "Hello Keith")
+        return conv_id
+
+    def test_requires_auth(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        resp = client.post(f"/web/conversation/{conv_id}/reply", data={"body": "reply"})
+        assert resp.status_code == 302
+
+    def test_reply_adds_message(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post(f"/web/conversation/{conv_id}/reply", data={"body": "Thanks!"})
+        assert resp.status_code == 200
+        assert "Thanks!" in resp.text
+
+    def test_empty_body_shows_error(self, client, web_db):
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post(f"/web/conversation/{conv_id}/reply", data={"body": ""})
+        assert resp.status_code == 200
+        assert "empty" in resp.text.lower()
+
+    def test_reply_marks_as_read(self, client, web_db):
+        from ai_mailbox.db.queries import get_last_read_sequence
+        conv_id = self._seed_conversation(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        client.post(f"/web/conversation/{conv_id}/reply", data={"body": "My reply"})
+        # After reply: cursor should be at 2 (original + reply)
+        assert get_last_read_sequence(web_db, conv_id, "keith") == 2
+
+    def test_nonexistent_conversation(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/conversation/fake-id/reply", data={"body": "reply"})
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Compose
+# ---------------------------------------------------------------------------
+
+class TestCompose:
+    """GET/POST /web/compose creates new messages."""
+
+    def test_compose_get_requires_auth(self, client):
+        resp = client.get("/web/compose")
+        assert resp.status_code == 302
+
+    def test_compose_shows_form(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/compose", headers={"HX-Request": "true"})
+        assert resp.status_code == 200
+        assert "New Message" in resp.text
+        assert "amy" in resp.text.lower()  # recipient dropdown
+
+    def test_compose_excludes_self(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/compose", headers={"HX-Request": "true"})
+        # keith should NOT be in the recipient list
+        assert 'value="keith"' not in resp.text
+
+    def test_compose_post_requires_auth(self, client):
+        resp = client.post("/web/compose", data={"to": "amy", "body": "hi"})
+        assert resp.status_code == 302
+
+    def test_compose_send_success(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/compose", data={
+            "to": "amy", "body": "Hello Amy!", "project": "general",
+        })
+        assert resp.status_code == 200
+        # Should show thread view with the sent message
+        assert "Hello Amy!" in resp.text
+
+    def test_compose_empty_body_error(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/compose", data={
+            "to": "amy", "body": "", "project": "general",
+        })
+        assert resp.status_code == 200
+        assert "empty" in resp.text.lower()
+
+    def test_compose_missing_recipient_error(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/compose", data={
+            "to": "", "body": "hello", "project": "general",
+        })
+        assert resp.status_code == 200
+        assert "recipient" in resp.text.lower()
+
+    def test_compose_self_send_error(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/compose", data={
+            "to": "keith", "body": "self msg", "project": "general",
+        })
+        assert resp.status_code == 200
+        assert "yourself" in resp.text.lower()
+
+    def test_compose_reuses_existing_conversation(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        # Pre-create conversation with a message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "amy", "Existing message")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.post("/web/compose", data={
+            "to": "amy", "body": "New message", "project": "general",
+        })
+        # Should show both messages (reused conversation)
+        assert "Existing message" in resp.text
+        assert "New message" in resp.text

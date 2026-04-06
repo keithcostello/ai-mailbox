@@ -1,0 +1,56 @@
+{% if error %}
+<div class="ui negative message">
+    <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{% if success %}
+<div class="ui positive message">
+    <p>{{ success }}</p>
+</div>
+{% endif %}
+
+<div class="ui segment">
+    <h3 class="ui header">
+        <i class="edit icon"></i>
+        <div class="content">New Message</div>
+    </h3>
+
+    <form class="ui form"
+          hx-post="/web/compose"
+          hx-target="#main-content"
+          hx-swap="innerHTML">
+        <div class="field">
+            <label>To</label>
+            <select name="to" class="ui search dropdown" required>
+                <option value="">Select recipient</option>
+                {% for user in users %}
+                <option value="{{ user.id }}" {% if form_to == user.id %}selected{% endif %}>{{ user.display_name }} ({{ user.id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>Project</label>
+            <div class="ui input">
+                <input type="text" name="project" value="{{ form_project or 'general' }}" placeholder="Project name">
+            </div>
+        </div>
+        <div class="field">
+            <label>Subject (optional)</label>
+            <div class="ui input">
+                <input type="text" name="subject" value="{{ form_subject or '' }}" placeholder="Subject">
+            </div>
+        </div>
+        <div class="field">
+            <label>Message</label>
+            <textarea name="body" rows="5" placeholder="Write your message..." required>{{ form_body or '' }}</textarea>
+        </div>
+        <button class="ui blue labeled icon button" type="submit">
+            <i class="send icon"></i> Send
+        </button>
+    </form>
+</div>
+
+<script>
+$(function() { $('.ui.dropdown').dropdown(); });
+</script>

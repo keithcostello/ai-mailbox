@@ -544,6 +544,50 @@ class TestListMessagesQuery:
         assert len(msgs) == 1
 
 
+class TestGetUserProjects:
+    """get_user_projects returns distinct project names."""
+
+    def test_returns_projects(self, db):
+        conv1 = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        conv2 = queries.find_or_create_direct_conversation(db, "keith", "amy", "alerts")
+        queries.insert_message(db, conv1, "keith", "msg")
+        queries.insert_message(db, conv2, "keith", "msg")
+        projects = queries.get_user_projects(db, "keith")
+        assert set(projects) == {"general", "alerts"}
+
+    def test_empty_when_no_conversations(self, db):
+        assert queries.get_user_projects(db, "keith") == []
+
+    def test_excludes_other_users_projects(self, db):
+        db._conn.execute(
+            "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
+            ("bob", "Bob", "test-bob-key"),
+        )
+        db._conn.commit()
+        conv = queries.find_or_create_direct_conversation(db, "bob", "amy", "secret")
+        queries.insert_message(db, conv, "bob", "msg")
+        assert queries.get_user_projects(db, "keith") == []
+
+
+class TestGetUserConversationPartners:
+    """get_user_conversation_partners returns distinct partner user_ids."""
+
+    def test_returns_partners(self, db):
+        conv = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv, "keith", "msg")
+        partners = queries.get_user_conversation_partners(db, "keith")
+        assert partners == ["amy"]
+
+    def test_empty_when_no_conversations(self, db):
+        assert queries.get_user_conversation_partners(db, "keith") == []
+
+    def test_excludes_self(self, db):
+        conv = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv, "keith", "msg")
+        partners = queries.get_user_conversation_partners(db, "keith")
+        assert "keith" not in partners
+
+
 class TestGetConversationMessagesWithHasMore:
     """get_conversation_messages returns has_more flag."""
 

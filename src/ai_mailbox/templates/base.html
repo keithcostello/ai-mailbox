@@ -4,27 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Mailbox{% endblock %}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        body { background: #f7f7f7; }
+        .full-height { height: calc(100vh - 50px); overflow: hidden; }
+        .scroll-y { overflow-y: auto; }
+    </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body>
     {% if user_id %}
-    <nav class="bg-white border-b border-gray-200 px-6 py-3">
-        <div class="max-w-4xl mx-auto flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <span class="text-lg font-semibold text-gray-900">AI Mailbox</span>
-                <a href="/web/inbox" class="text-sm text-gray-600 hover:text-gray-900">Inbox</a>
-            </div>
-            <div class="flex items-center gap-4">
-                <span class="text-sm text-gray-600">{{ display_name }}</span>
-                <a href="/web/logout" class="text-sm text-red-600 hover:text-red-800">Logout</a>
-            </div>
+    <div class="ui inverted menu" style="margin-bottom: 0; border-radius: 0;">
+        <a class="header item" href="/web/inbox">AI Mailbox</a>
+        <a class="item" href="/web/inbox">Inbox</a>
+        <a class="item" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
+        <div class="right menu">
+            <div class="item">{{ display_name }}</div>
+            <a class="item" href="/web/logout" style="color: #ff6b6b;">Logout</a>
         </div>
-    </nav>
+    </div>
     {% endif %}
 
-    <main class="max-w-4xl mx-auto px-6 py-8">
+    <main>
         {% block content %}{% endblock %}
     </main>
+
+    <script>
+        // Re-initialize Semantic UI components after HTMX swaps
+        document.body.addEventListener('htmx:afterSwap', function() {
+            $('.ui.dropdown').dropdown();
+        });
+    </script>
 </body>
 </html>

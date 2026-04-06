@@ -1,0 +1,73 @@
+{% if error %}
+<div class="ui negative message">
+    <p>{{ error }}</p>
+</div>
+{% endif %}
+
+<div class="ui segment">
+    <h3 class="ui header">
+        {% set others = [] %}
+        {% for p in participants if p != user_id %}
+            {% if others.append(p) %}{% endif %}
+        {% endfor %}
+        {{ others | join(', ') }}
+        {% if conversation.project %}
+        <div class="ui small label" style="margin-left: 8px;">{{ conversation.project }}</div>
+        {% endif %}
+        <div class="sub header">
+            {% if conversation.type == 'direct' %}Direct message{% elif conversation.type == 'team_group' %}Group: {{ conversation.name }}{% else %}Project group{% endif %}
+            &middot; {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
+        </div>
+    </h3>
+
+    <div class="ui divider"></div>
+
+    <div class="ui comments" id="message-list">
+        {% for msg in messages %}
+        <div class="comment">
+            <a class="avatar">
+                <i class="large user circle icon" style="font-size: 2.5em; color: {% if msg.from_user == user_id %}#2185d0{% else %}#21ba45{% endif %};"></i>
+            </a>
+            <div class="content">
+                <a class="author">{{ msg.from_user }}</a>
+                <div class="metadata">
+                    <span class="date">{{ msg.created_at | relative_time }}</span>
+                    {% if msg.subject %}
+                    <span>Re: {{ msg.subject }}</span>
+                    {% endif %}
+                </div>
+                <div class="text" style="white-space: pre-wrap;">{{ msg.body }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="ui divider"></div>
+
+    <form class="ui reply form"
+          hx-post="/web/conversation/{{ conversation.id }}/reply"
+          hx-target="#main-content"
+          hx-swap="innerHTML">
+        <div class="field">
+            <textarea name="body" rows="3" placeholder="Write a reply..." required></textarea>
+        </div>
+        <button class="ui blue labeled icon button" type="submit">
+            <i class="edit icon"></i> Reply
+        </button>
+    </form>
+</div>
+
+{# Hidden trigger to refresh sidebar unread counts after viewing #}
+<div hx-get="/web/inbox/conversations"
+     hx-target="#conversation-list"
+     hx-trigger="load"
+     hx-swap="innerHTML"
+     style="display:none;"></div>
+
+<script>
+// Auto-scroll to bottom of message list
+(function() {
+    var el = document.getElementById('message-list');
+    if (el) el.scrollTop = el.scrollHeight;
+})();
+</script>
