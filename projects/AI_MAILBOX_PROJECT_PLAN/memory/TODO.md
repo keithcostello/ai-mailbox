@@ -37,3 +37,5 @@
 - Sprint 5 spec written (ACK, archiving, agent identity, tech debt). (2026-04-06)
 - Sprint 5 implemented: acknowledge tool, archive_conversation tool, agent identity, user directory, ACK badges, PostgresDB retry narrowing. 424 tests. (2026-04-06)
 - Sprint 5 deployed (f7f16f0). AI UX UAT + Human UAT passed. Issues #9/#10/#11 closed. (2026-04-06)
+- UI redesign: corporate theme, flat Slack-style messages, monochrome+accent design system. (2026-04-06)
+- UI polish: bolder names, colored avatars, accent unread counts (f5801f1). Human UAT passed. (2026-04-06)

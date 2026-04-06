@@ -1,16 +1,17 @@
 # AI_MAILBOX_PROJECT_PLAN
 
 **Status:** ACTIVE
-**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 5 complete, ready for Sprint 6
+**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 5 complete + UI redesign, ready for Sprint 6
 **Expected Branch:** mvp-1-staging
 **PR URL:**
 **Relevant Handoff:** projects/AI_MAILBOX_PROJECT_PLAN/docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md
 
 ## Next Steps
 
-- Write Sprint 6 spec (webhook delivery, notification preferences, agent registration)
-- Implement Sprint 6 via TDD
+- Write Sprint 6 spec (Google/GitHub OAuth, user settings page, invite-only mode, generic README)
+- Implement Sprint 6 via TDD (target 460+ tests)
 - Deploy and pass AI UX UAT + Human UAT
+- Close GitHub issue #13
 
 ## Pending Tasks
 
@@ -46,32 +47,14 @@
 | `docs/plans/COMPETITIVE_LANDSCAPE.md` | complete | Claude | Protocols, frameworks, positioning |
 | `docs/plans/SPRINT_ROADMAP.md` | active | Claude | 8-sprint plan |
 | `docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 5 continuation prompt (used) |
+| `docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md` | current | Claude | Sprint 6 continuation prompt |
 
 ## Recent Activity Log
 
-- 2026-04-05: Sprint 1 spec written, 3 open questions resolved, approved.
-- 2026-04-05: Sprint 1 implemented via 10-step TDD-through-delivery. 140 tests.
-- 2026-04-05: Deployed to MVP 1 Staging. AI UX UAT + Human UAT passed.
-- 2026-04-05: GitHub issues #5, #7, #8 closed.
-- 2026-04-05: Sprint 2 spec written and approved (API redesign, rate limiting, group messaging).
-- 2026-04-05: Sprint 2 core implemented via 8-step TDD. 254 tests passing. 29 files changed.
-- 2026-04-05: 10 MCP tools registered (5 new, 4 enhanced, 1 deprecated).
-- 2026-04-05: Deployed v0.4.0 to MVP 1 Staging. Health verified. AI UX UAT passed (9/9).
-- 2026-04-05: Human UAT: inbox renders but lacks functional messaging UX.
-- 2026-04-05: Decision: Replace Tailwind with Semantic UI. Add thread view, compose, reply, filtering.
-- 2026-04-05: Semantic UI messaging UX implemented. Web UX functional.
-- 2026-04-05: Human UAT found 3 filter bugs. Fixed. 287 tests passing.
-- 2026-04-05: Filter bug fixes deployed. Ready for Human UAT re-verification.
-- 2026-04-06: Human UAT passed. Sprint 2 committed (850aca8). GitHub issues #4, #6, #12 closed.
-- 2026-04-06: Sprint 3 spec written (P0 security + DaisyUI migration). Approved.
-- 2026-04-06: Sprint 3 implemented via parallel TDD. 320 tests passing. Deployed (988c2dc).
-- 2026-04-06: Human UAT passed. GitHub issues #1, #2, #3, #16 closed. Sprint 3 COMPLETE.
-- 2026-04-06: Sprint 4 spec written and approved (search, JSON payloads, live polling, check_messages removal, scopes normalization).
-- 2026-04-06: Sprint 4 implemented via parallel TDD. 372 tests passing. 22 files changed.
-- 2026-04-06: Migration runner fix for $$ dollar-quoted PL/pgSQL blocks (f172d9e).
-- 2026-04-06: Deployed to MVP 1 Staging. Migration 004 (FTS) applied. AI UX UAT passed (5/5).
-- 2026-04-06: Human UAT passed. GitHub issue #14 closed. Sprint 4 COMPLETE.
-- 2026-04-06: Sprint 5 spec written (ACK, archiving, agent identity, tech debt #9/#10/#11).
-- 2026-04-06: Sprint 5 implemented via parallel TDD. 424 tests passing. 25 files changed.
-- 2026-04-06: Deployed to MVP 1 Staging. Migration 005 applied. AI UX UAT passed (4/4).
-- 2026-04-06: Human UAT passed. GitHub issues #9, #10, #11 closed. Sprint 5 COMPLETE.
+- 2026-04-05: Sprints 1-2 implemented. 287 tests. Issues #4-8, #12 closed.
+- 2026-04-06: Sprint 3 implemented (security + DaisyUI). 320 tests. Issues #1-3, #16 closed.
+- 2026-04-06: Sprint 4 implemented (search, JSON, polling). 372 tests. Issue #14 closed.
+- 2026-04-06: Sprint 5 implemented (ACK, archiving, agent identity, tech debt). 424 tests. Issues #9-11 closed.
+- 2026-04-06: UI redesign: fantasy->corporate theme, chat bubbles->flat Slack-style, monochrome+accent design.
+- 2026-04-06: UI polish: bolder names, colored avatars, primary unread counts (f5801f1). Human UAT passed.
+- 2026-04-06: Sprint 6 scope confirmed: Google/GitHub OAuth, user settings page, invite-only mode, generic README.
