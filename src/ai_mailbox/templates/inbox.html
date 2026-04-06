@@ -23,7 +23,7 @@
         </div>
         <div id="conversation-list" class="flex-1 overflow-y-auto"
              hx-get="/web/inbox/conversations{% if project_filter %}?project={{ project_filter }}{% endif %}{% if participant_filter %}&participant={{ participant_filter }}{% endif %}"
-             hx-trigger="load"
+             hx-trigger="load, every 15s"
              hx-swap="innerHTML">
         </div>
     </div>

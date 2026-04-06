@@ -1,0 +1,36 @@
+<div class="card bg-base-100 shadow">
+    <div class="card-body">
+        <h3 class="card-title text-lg">
+            Search: "{{ query }}"
+            <span class="badge badge-ghost">{{ results | length }} result{{ 's' if results | length != 1 else '' }}</span>
+        </h3>
+        <div class="divider my-2"></div>
+        {% if results %}
+        <div class="space-y-3">
+            {% for msg in results %}
+            <div class="p-3 rounded-lg hover:bg-base-200 cursor-pointer border border-base-300"
+                 hx-get="/web/conversation/{{ msg.conversation_id }}"
+                 hx-target="#main-content"
+                 hx-push-url="true">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="font-medium text-sm">{{ msg.from_user }}</span>
+                    <span class="text-xs text-base-content/40">{{ msg.created_at | relative_time }}</span>
+                </div>
+                {% if msg.subject %}
+                <div class="text-sm font-medium">{{ msg.subject }}</div>
+                {% endif %}
+                <div class="text-sm text-base-content/70 line-clamp-2">{{ msg.body_preview }}</div>
+                <div class="flex items-center gap-2 mt-1">
+                    <span class="badge badge-ghost badge-xs">{{ msg.project }}</span>
+                    {% if msg.content_type == 'application/json' %}
+                    <span class="badge badge-info badge-xs">JSON</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-base-content/50 text-center py-4">No messages match your search.</p>
+        {% endif %}
+    </div>
+</div>

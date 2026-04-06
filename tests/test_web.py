@@ -629,3 +629,195 @@ class TestFilterDropdowns:
         assert 'hx-get="/web/inbox/conversations"' not in resp.text
         # Should reference filter elements to preserve state
         assert "project-filter" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Search bar and search results
+# ---------------------------------------------------------------------------
+
+class TestWebSearch:
+    """GET /web/search returns search results partial."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def _seed(self, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "steertrue")
+        insert_message(web_db, conv_id, "keith", "Railway deploy is ready")
+        insert_message(web_db, conv_id, "amy", "Checking the logs now")
+        return conv_id
+
+    def test_search_requires_auth(self, client):
+        resp = client.get("/web/search?q=railway")
+        assert resp.status_code == 302
+
+    def test_search_returns_results(self, client, web_db):
+        self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/search?q=railway")
+        assert resp.status_code == 200
+        assert "Railway deploy" in resp.text
+        assert "1 result" in resp.text
+
+    def test_search_no_results(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/search?q=nonexistent")
+        assert resp.status_code == 200
+        assert "No messages match" in resp.text
+
+    def test_search_empty_query_returns_empty_state(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/search?q=")
+        assert resp.status_code == 200
+        assert "Select a conversation" in resp.text
+
+    def test_search_result_has_click_to_conversation(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/search?q=railway")
+        assert f"/web/conversation/{conv_id}" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Search bar in navbar
+# ---------------------------------------------------------------------------
+
+class TestSearchBar:
+    """Navbar contains search input with HTMX triggers."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_navbar_has_search_input(self, client):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert 'id="search-input"' in resp.text
+        assert 'placeholder="Search messages..."' in resp.text
+
+    def test_search_input_has_htmx_trigger(self, client):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert 'hx-get="/web/search"' in resp.text
+        assert "delay:300ms" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: JSON rendering in thread view
+# ---------------------------------------------------------------------------
+
+class TestJsonRendering:
+    """JSON messages render as formatted code blocks."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_json_message_renders_as_code_block(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", '{"status": "ok", "count": 42}',
+                      content_type="application/json")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "<pre" in resp.text
+        assert "<code>" in resp.text
+        # Should be pretty-printed (indented) -- Jinja2 escapes quotes as &#34;
+        assert '&#34;status&#34;: &#34;ok&#34;' in resp.text
+
+    def test_plaintext_message_renders_as_markdown(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "**bold text**")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "<strong>bold text</strong>" in resp.text
+
+    def test_invalid_json_stored_before_sprint4_renders_as_text(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        # Simulate pre-Sprint 4 data: content_type=application/json but body is not valid JSON
+        insert_message(web_db, conv_id, "keith", "not valid json",
+                      content_type="application/json")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert resp.status_code == 200
+        assert "not valid json" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Live polling attributes
+# ---------------------------------------------------------------------------
+
+class TestPolling:
+    """HTMX polling attributes present in templates."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def test_sidebar_polls_every_15s(self, client):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/inbox")
+        assert "every 15s" in resp.text
+
+    def test_thread_messages_poll_every_10s(self, client, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "test")
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
+        assert "every 10s" in resp.text
+        assert f"/web/conversation/{conv_id}/messages" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Message list partial (for thread polling)
+# ---------------------------------------------------------------------------
+
+class TestMessageListPartial:
+    """GET /web/conversation/{conv_id}/messages returns message list."""
+
+    def setup_method(self):
+        from ai_mailbox.rate_limit import reset_storage
+        reset_storage()
+
+    def _seed(self, web_db):
+        from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
+        conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
+        insert_message(web_db, conv_id, "keith", "Message one")
+        insert_message(web_db, conv_id, "amy", "Message two")
+        return conv_id
+
+    def test_requires_auth(self, client, web_db):
+        conv_id = self._seed(web_db)
+        resp = client.get(f"/web/conversation/{conv_id}/messages")
+        assert resp.status_code == 401
+
+    def test_returns_messages(self, client, web_db):
+        conv_id = self._seed(web_db)
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get(f"/web/conversation/{conv_id}/messages")
+        assert resp.status_code == 200
+        assert "Message one" in resp.text
+        assert "Message two" in resp.text
+
+    def test_nonexistent_conversation(self, client, web_db):
+        token = _make_session_cookie("keith")
+        client.cookies.set("session", token)
+        resp = client.get("/web/conversation/fake-id/messages")
+        assert resp.status_code == 404

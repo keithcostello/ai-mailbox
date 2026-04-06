@@ -473,6 +473,131 @@ def get_thread(db: DBConnection, message_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
+
+def search_messages(
+    db: DBConnection,
+    user_id: str,
+    query: str,
+    *,
+    project: str | None = None,
+    from_user: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Full-text search across messages the user can see.
+
+    Uses PostgreSQL tsvector when available, falls back to LIKE on SQLite.
+    """
+    from ai_mailbox.db.connection import PostgresDB
+
+    if isinstance(db, PostgresDB):
+        return _search_postgres(db, user_id, query, project=project,
+                                from_user=from_user, since=since,
+                                until=until, limit=limit)
+    return _search_sqlite(db, user_id, query, project=project,
+                          from_user=from_user, since=since,
+                          until=until, limit=limit)
+
+
+def _search_postgres(
+    db: DBConnection,
+    user_id: str,
+    query: str,
+    *,
+    project: str | None,
+    from_user: str | None,
+    since: str | None,
+    until: str | None,
+    limit: int,
+) -> list[dict]:
+    conditions = [
+        "cp.user_id = ?",
+        "m.search_vector @@ plainto_tsquery('english', ?)",
+    ]
+    params: list = [user_id, query]
+
+    if project is not None:
+        conditions.append("c.project = ?")
+        params.append(project)
+    if from_user is not None:
+        conditions.append("m.from_user = ?")
+        params.append(from_user)
+    if since is not None:
+        conditions.append("m.created_at >= ?")
+        params.append(since)
+    if until is not None:
+        conditions.append("m.created_at <= ?")
+        params.append(until)
+
+    params.append(limit)
+    where = " AND ".join(conditions)
+
+    return db.fetchall(
+        f"""SELECT m.*, c.project, c.type,
+                   ts_rank(m.search_vector, plainto_tsquery('english', ?)) AS rank
+            FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            JOIN conversation_participants cp ON c.id = cp.conversation_id
+            WHERE {where}
+            ORDER BY rank DESC, m.created_at DESC
+            LIMIT ?""",
+        tuple([query] + params),
+    )
+
+
+def _search_sqlite(
+    db: DBConnection,
+    user_id: str,
+    query: str,
+    *,
+    project: str | None,
+    from_user: str | None,
+    since: str | None,
+    until: str | None,
+    limit: int,
+) -> list[dict]:
+    # Escape LIKE special chars, then wrap with wildcards
+    escaped = query.replace("%", "\\%").replace("_", "\\_")
+    like_pattern = f"%{escaped}%"
+
+    conditions = [
+        "cp.user_id = ?",
+        "(m.body LIKE ? ESCAPE '\\' OR m.subject LIKE ? ESCAPE '\\')",
+    ]
+    params: list = [user_id, like_pattern, like_pattern]
+
+    if project is not None:
+        conditions.append("c.project = ?")
+        params.append(project)
+    if from_user is not None:
+        conditions.append("m.from_user = ?")
+        params.append(from_user)
+    if since is not None:
+        conditions.append("m.created_at >= ?")
+        params.append(since)
+    if until is not None:
+        conditions.append("m.created_at <= ?")
+        params.append(until)
+
+    params.append(limit)
+    where = " AND ".join(conditions)
+
+    return db.fetchall(
+        f"""SELECT m.*, c.project, c.type
+            FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            JOIN conversation_participants cp ON c.id = cp.conversation_id
+            WHERE {where}
+            ORDER BY m.created_at DESC
+            LIMIT ?""",
+        tuple(params),
+    )
+
+
+# ---------------------------------------------------------------------------
 # User queries
 # ---------------------------------------------------------------------------
 

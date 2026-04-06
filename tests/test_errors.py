@@ -98,6 +98,8 @@ class TestErrorCodeRegistry:
             "INVALID_PARAMETER", "MISSING_PARAMETER",
             "GROUP_CONFIRMATION_REQUIRED", "GROUP_TOKEN_EXPIRED",
             "GROUP_TOKEN_INVALID",
+            # Sprint 4
+            "INVALID_JSON",
         }
         assert set(ERROR_CODES.keys()) == expected
 

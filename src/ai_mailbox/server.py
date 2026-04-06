@@ -18,7 +18,6 @@ from ai_mailbox.config import Config
 from ai_mailbox.db.connection import SQLiteDB, PostgresDB
 from ai_mailbox.oauth import MailboxOAuthProvider, hash_password, current_user_id
 from ai_mailbox.tools.send import tool_send_message
-from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
@@ -27,6 +26,7 @@ from ai_mailbox.tools.mark_read import tool_mark_read
 from ai_mailbox.tools.list_users import tool_list_users
 from ai_mailbox.tools.create_group import tool_create_group
 from ai_mailbox.tools.add_participant import tool_add_participant
+from ai_mailbox.tools.search import tool_search_messages
 from ai_mailbox.web import create_web_routes
 
 logger = logging.getLogger(__name__)
@@ -180,16 +180,6 @@ def create_app() -> object:
         )
 
     @mcp.tool()
-    def check_messages(project: str = "", unread_only: bool = True) -> dict:
-        """Deprecated: use list_messages + mark_read instead. Check inbox and auto-mark as read."""
-        uid = _get_user()
-        logger.info(f"check_messages [DEPRECATED]: user={uid} project={project or 'all'}")
-        return tool_check_messages(
-            db, user_id=uid,
-            project=project or None, unread_only=unread_only,
-        )
-
-    @mcp.tool()
     def list_messages(
         project: str = "",
         unread_only: bool = True,
@@ -275,6 +265,24 @@ def create_app() -> object:
             db, user_id=uid,
             conversation_id=conversation_id,
             user_to_add=user_to_add,
+        )
+
+    @mcp.tool()
+    def search_messages(
+        query: str,
+        project: str | None = None,
+        from_user: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 20,
+    ) -> dict:
+        """Search messages across all your conversations. Returns matching messages ordered by relevance."""
+        uid = _get_user()
+        logger.info(f"search_messages: user={uid} query={query!r}")
+        return tool_search_messages(
+            db, user_id=uid, query=query,
+            project=project, from_user=from_user,
+            since=since, until=until, limit=limit,
         )
 
     # --- Login page ---

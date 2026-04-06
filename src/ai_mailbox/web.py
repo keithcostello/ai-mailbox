@@ -49,6 +49,19 @@ _jinja_env.globals["is_ai_user"] = _is_ai_user
 _jinja_env.filters["markdown"] = lambda text: Markup(render_markdown(text)) if text else Markup("")
 
 
+def _pretty_json(text: str) -> str:
+    """Format JSON string with indentation. Returns original if not valid JSON."""
+    import json
+    try:
+        parsed = json.loads(text)
+        return json.dumps(parsed, indent=2)
+    except (json.JSONDecodeError, TypeError):
+        return text
+
+
+_jinja_env.filters["pretty_json"] = _pretty_json
+
+
 def _render(template_name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     """Render a Jinja2 template to HTMLResponse."""
     tmpl = _jinja_env.get_template(template_name)
@@ -161,6 +174,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         get_user_conversation_partners,
         get_user_projects,
         insert_message,
+        search_messages,
     )
 
     # --- Auth helpers ---
@@ -518,6 +532,67 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
             messages=[dict(m) for m in messages],
         )
 
+    # --- Search ---
+
+    async def web_search(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return RedirectResponse(url="/web/login", status_code=302)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _htmx_error(429)
+
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return _render("partials/empty_state.html", user_id=user_id)
+
+        results = search_messages(db, user_id, query, limit=20)
+        for r in results:
+            body = r["body"]
+            r["body_preview"] = body[:200] + ("..." if len(body) > 200 else "")
+
+        return _render(
+            "partials/search_results.html",
+            user_id=user_id,
+            query=query,
+            results=results,
+        )
+
+    # --- Message list partial (for thread polling) ---
+
+    async def web_message_list(request: Request):
+        user_id = _require_auth(request)
+        if not user_id:
+            return HTMLResponse("", status_code=401)
+
+        if not check_rate_limit(WEB_PAGE_LIMIT, "web", user_id):
+            return _htmx_error(429)
+
+        conv_id = request.path_params["conv_id"]
+        try:
+            conv = get_conversation(db, conv_id)
+        except Exception:
+            conv = None
+        if not conv:
+            return _htmx_error(404)
+
+        participants = get_conversation_participants(db, conv_id)
+        if user_id not in participants:
+            return _htmx_error(403)
+
+        messages, _ = get_conversation_messages(db, conv_id)
+
+        # Auto-mark-read on poll
+        max_seq = get_max_sequence(db, conv_id)
+        if max_seq > 0:
+            advance_read_cursor(db, conv_id, user_id, max_seq)
+
+        return _render(
+            "partials/message_list.html",
+            user_id=user_id,
+            messages=[dict(m) for m in messages],
+        )
+
     # --- Health ---
 
     async def web_health(request: Request):
@@ -541,5 +616,7 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
         Route("/web/conversation/{conv_id}/reply", web_reply, methods=["POST"]),
         Route("/web/compose", web_compose_get, methods=["GET"]),
         Route("/web/compose", web_compose_post, methods=["POST"]),
+        Route("/web/search", web_search, methods=["GET"]),
+        Route("/web/conversation/{conv_id}/messages", web_message_list, methods=["GET"]),
         Route("/web/health", web_health, methods=["GET"]),
     ]

@@ -29,7 +29,10 @@
         <div class="divider my-2"></div>
 
         <!-- Messages -->
-        <div id="message-list" class="space-y-1 max-h-[calc(100vh-320px)] overflow-y-auto pr-2">
+        <div id="message-list" class="space-y-1 max-h-[calc(100vh-320px)] overflow-y-auto pr-2"
+             hx-get="/web/conversation/{{ conversation.id }}/messages"
+             hx-trigger="every 10s"
+             hx-swap="innerHTML">
             {% for msg in messages %}
             <div class="chat {{ 'chat-end' if msg.from_user == user_id else 'chat-start' }}">
                 <div class="chat-header text-sm mb-1">
@@ -40,7 +43,13 @@
                     <time class="text-xs opacity-50 ml-1">{{ msg.created_at | relative_time }}</time>
                 </div>
                 <div class="chat-bubble {{ 'chat-bubble-primary' if msg.from_user == user_id else '' }}">
+                    {% if msg.content_type == 'application/json' %}
+                    <div class="prose-msg text-sm">
+                        <pre class="bg-base-200 p-3 rounded-lg text-xs overflow-x-auto"><code>{{ msg.body | pretty_json }}</code></pre>
+                    </div>
+                    {% else %}
                     <div class="prose-msg text-sm">{{ msg.body | markdown }}</div>
+                    {% endif %}
                 </div>
                 {% if msg.subject %}
                 <div class="chat-footer text-xs opacity-50">Re: {{ msg.subject }}</div>

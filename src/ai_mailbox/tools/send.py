@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from ai_mailbox.config import MAX_BODY_LENGTH
@@ -45,6 +46,12 @@ def tool_send_message(
             f"Body exceeds {MAX_BODY_LENGTH} characters ({len(body)} given)",
             param="body",
         )
+
+    if content_type == "application/json":
+        try:
+            json.loads(body)
+        except (json.JSONDecodeError, TypeError) as e:
+            return make_error("INVALID_JSON", f"Body is not valid JSON: {e}", param="body")
 
     # --- Route to the right mode ---
 

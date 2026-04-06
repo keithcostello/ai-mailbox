@@ -19,8 +19,18 @@
 <body class="bg-base-200 min-h-screen">
     {% if user_id %}
     <div class="navbar bg-neutral text-neutral-content shadow-lg px-4">
-        <div class="flex-1">
+        <div class="flex-1 flex items-center gap-4">
             <a class="btn btn-ghost text-xl normal-case" href="/web/inbox">AI Mailbox</a>
+            <div class="form-control">
+                <input type="text" placeholder="Search messages..."
+                       class="input input-bordered input-sm w-64 text-base-content"
+                       id="search-input"
+                       hx-get="/web/search"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#main-content"
+                       hx-include="this"
+                       name="q">
+            </div>
         </div>
         <div class="flex-none gap-2">
             <a class="btn btn-ghost btn-sm" href="/web/inbox">Inbox</a>

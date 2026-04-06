@@ -20,6 +20,8 @@ ERROR_CODES: dict[str, dict] = {
     "GROUP_CONFIRMATION_REQUIRED": {"retryable": False},
     "GROUP_TOKEN_EXPIRED":    {"retryable": False},
     "GROUP_TOKEN_INVALID":    {"retryable": False},
+    # Sprint 4
+    "INVALID_JSON":           {"retryable": False},
 }
 
 

@@ -12,17 +12,26 @@ logger = logging.getLogger(__name__)
 _MIGRATION_DIR = Path(__file__).parent / "migrations"
 
 
-def get_migration_sql() -> str:
-    """Read and concatenate all migration SQL files in order."""
+_PG_ONLY_MIGRATIONS = {"004_search.sql"}
+
+
+def get_migration_sql(*, exclude_pg_only: bool = False) -> str:
+    """Read and concatenate all migration SQL files in order.
+
+    When exclude_pg_only is True, skip migrations that rely on
+    PostgreSQL-only features (tsvector, plpgsql, GIN indexes).
+    """
     parts = []
     for f in sorted(_MIGRATION_DIR.glob("*.sql")):
+        if exclude_pg_only and f.name in _PG_ONLY_MIGRATIONS:
+            continue
         parts.append(f.read_text())
     return "\n\n".join(parts)
 
 
 def ensure_schema_sqlite(conn: sqlite3.Connection) -> None:
     """Run migrations against a SQLite connection (for testing)."""
-    sql = get_migration_sql()
+    sql = get_migration_sql(exclude_pg_only=True)
     # SQLite-compatible: strip PG-specific syntax
     sql = sql.replace("gen_random_uuid()", "'placeholder'")
     sql = sql.replace("NOW()", "CURRENT_TIMESTAMP")

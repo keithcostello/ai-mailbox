@@ -3,10 +3,11 @@
 import pytest
 
 from ai_mailbox.tools.send import tool_send_message
-from ai_mailbox.tools.inbox import tool_check_messages
 from ai_mailbox.tools.reply import tool_reply_to_message
 from ai_mailbox.tools.thread import tool_get_thread
 from ai_mailbox.tools.identity import tool_whoami
+from ai_mailbox.tools.list_messages import tool_list_messages
+from ai_mailbox.tools.mark_read import tool_mark_read
 from ai_mailbox.errors import is_error
 
 
@@ -29,17 +30,18 @@ class TestScenarioA:
         tool_send_message(db, user_id="keith", to="amy",
                           body="Deploy question?",
                           project="steertrue", subject="Deploy question")
-        result = tool_check_messages(db, user_id="amy")
+        result = tool_list_messages(db, user_id="amy")
         assert result["message_count"] == 1
         msg = result["messages"][0]
-        assert msg["project"] == "steertrue"
         assert msg["subject"] == "Deploy question"
         assert msg["body"] == "Deploy question?"
 
-    def test_check_marks_as_read(self, db):
-        tool_send_message(db, user_id="keith", to="amy", body="Read me")
-        tool_check_messages(db, user_id="amy")
-        result = tool_check_messages(db, user_id="amy", unread_only=True)
+    def test_mark_read_clears_unread(self, db):
+        r = tool_send_message(db, user_id="keith", to="amy", body="Read me")
+        result = tool_list_messages(db, user_id="amy")
+        assert result["message_count"] == 1
+        tool_mark_read(db, user_id="amy", conversation_id=r["conversation_id"])
+        result = tool_list_messages(db, user_id="amy", unread_only=True)
         assert result["message_count"] == 0
 
 
@@ -124,17 +126,17 @@ class TestScenarioC:
 
     def test_all_projects_inbox(self, db):
         self._seed_messages(db)
-        result = tool_check_messages(db, user_id="amy", project=None)
+        result = tool_list_messages(db, user_id="amy", project=None)
         assert result["message_count"] == 3
 
     def test_filter_by_steertrue(self, db):
         self._seed_messages(db)
-        result = tool_check_messages(db, user_id="amy", project="steertrue")
+        result = tool_list_messages(db, user_id="amy", project="steertrue")
         assert result["message_count"] == 1
 
     def test_filter_by_general(self, db):
         self._seed_messages(db)
-        result = tool_check_messages(db, user_id="amy", project="general")
+        result = tool_list_messages(db, user_id="amy", project="general")
         assert result["message_count"] == 1
 
     def test_whoami_unread_counts(self, db):
@@ -207,8 +209,8 @@ class TestScenarioE:
         assert is_error(result)
         assert result["error"]["code"] == "MESSAGE_NOT_FOUND"
 
-    def test_check_empty_inbox(self, db):
-        result = tool_check_messages(db, user_id="keith")
+    def test_list_empty_inbox(self, db):
+        result = tool_list_messages(db, user_id="keith")
         assert result["message_count"] == 0
         assert result["messages"] == []
 
@@ -284,7 +286,7 @@ class TestSendMessageEnhanced:
 
     def test_content_type_stored(self, db):
         result = tool_send_message(
-            db, user_id="keith", to="amy", body="json data",
+            db, user_id="keith", to="amy", body='{"data": "test"}',
             content_type="application/json",
         )
         assert not is_error(result)
@@ -381,6 +383,34 @@ class TestSendMessageEnhanced:
         result = tool_send_message(db, user_id="keith", to="amy", body="hi")
         assert result["to_users"] == ["amy"]
 
+    def test_content_type_json_valid_body(self, db):
+        """Sending application/json with valid JSON body succeeds."""
+        result = tool_send_message(
+            db, user_id="keith", to="amy",
+            body='{"key": "value"}', content_type="application/json",
+        )
+        assert not is_error(result)
+        assert "message_id" in result
+
+    def test_content_type_json_invalid_body(self, db):
+        """Sending application/json with non-JSON body returns INVALID_JSON."""
+        result = tool_send_message(
+            db, user_id="keith", to="amy",
+            body="not json", content_type="application/json",
+        )
+        assert is_error(result)
+        assert result["error"]["code"] == "INVALID_JSON"
+        assert result["error"]["param"] == "body"
+        assert result["error"]["retryable"] is False
+
+    def test_content_type_plaintext_no_json_check(self, db):
+        """text/plain body is not validated as JSON."""
+        result = tool_send_message(
+            db, user_id="keith", to="amy",
+            body="just plain text", content_type="text/plain",
+        )
+        assert not is_error(result)
+
     def test_to_array_deduplicates(self, db):
         """Duplicate recipients are silently removed."""
         db._conn.execute(
@@ -443,3 +473,24 @@ class TestReplyEnhanced:
             db, user_id="amy", message_id=r1["message_id"], body="reply",
         )
         assert "conversation_id" in result
+
+    def test_reply_json_valid(self, db):
+        """Reply with application/json and valid JSON body succeeds."""
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body='{"status": "ok"}', content_type="application/json",
+        )
+        assert not is_error(result)
+
+    def test_reply_json_invalid(self, db):
+        """Reply with application/json and non-JSON body returns INVALID_JSON."""
+        r1 = tool_send_message(db, user_id="keith", to="amy", body="hello")
+        result = tool_reply_to_message(
+            db, user_id="amy", message_id=r1["message_id"],
+            body="not json at all", content_type="application/json",
+        )
+        assert is_error(result)
+        assert result["error"]["code"] == "INVALID_JSON"
+        assert result["error"]["param"] == "body"
+        assert result["error"]["retryable"] is False

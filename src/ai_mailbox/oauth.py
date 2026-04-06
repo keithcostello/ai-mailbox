@@ -38,6 +38,19 @@ if TYPE_CHECKING:
     from ai_mailbox.db.connection import DBConnection
 
 
+def _parse_scopes(scopes_str: str | None) -> list[str]:
+    """Parse scopes from DB. Handles both JSON array and comma-separated formats."""
+    if not scopes_str:
+        return []
+    try:
+        parsed = json.loads(scopes_str)
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [s.strip() for s in scopes_str.split(",") if s.strip()]
+
+
 def hash_password(password: str) -> str:
     """Hash a password with bcrypt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -148,7 +161,7 @@ class MailboxOAuthProvider:
             code_challenge=row["code_challenge"],
             redirect_uri=row["redirect_uri"],
             redirect_uri_provided_explicitly=True,
-            scopes=row["scopes"].split(",") if row["scopes"] else [],
+            scopes=_parse_scopes(row["scopes"]),
             expires_at=float(row["expires_at"]),
         )
 
@@ -170,7 +183,7 @@ class MailboxOAuthProvider:
                 access_token,
                 authorization_code.client_id,
                 authorization_code.user_id,
-                ",".join(authorization_code.scopes),
+                json.dumps(authorization_code.scopes),
                 int(time.time()) + 3600,
                 refresh_token,
             ),
@@ -202,7 +215,7 @@ class MailboxOAuthProvider:
         )
         client_id = row["client_id"] if row else "unknown"
         logger.info(f"OAuth: authenticated user={user_id} client={client_id}")
-        scopes = row["scopes"].split(",") if row and row["scopes"] else []
+        scopes = _parse_scopes(row["scopes"]) if row else []
         expires_at = row["expires_at"] if row else None
 
         return AccessToken(
@@ -243,7 +256,7 @@ class MailboxOAuthProvider:
         self.db.execute("DELETE FROM oauth_tokens WHERE refresh_token = ?", (refresh_token,))
         self.db.execute(
             "INSERT INTO oauth_tokens (token, client_id, user_id, scopes, expires_at, refresh_token) VALUES (?, ?, ?, ?, ?, ?)",
-            (new_access, client.client_id, user_id, ",".join(scopes), int(time.time()) + 3600, new_refresh),
+            (new_access, client.client_id, user_id, json.dumps(scopes), int(time.time()) + 3600, new_refresh),
         )
         self.db.commit()
 
@@ -291,7 +304,7 @@ class MailboxOAuthProvider:
 
         self.db.execute(
             "INSERT INTO oauth_codes (code, client_id, user_id, code_challenge, redirect_uri, scopes, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (code, client_id, user_id, code_challenge, redirect_uri, ",".join(scopes), expires_at),
+            (code, client_id, user_id, code_challenge, redirect_uri, json.dumps(scopes), expires_at),
         )
         self.db.commit()
         return code
