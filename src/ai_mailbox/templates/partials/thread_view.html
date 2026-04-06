@@ -1,87 +1,81 @@
 {% if error %}
-<div class="alert alert-error mb-4"><span>{{ error }}</span></div>
+<div class="text-sm text-error mb-3 px-1">{{ error }}</div>
 {% endif %}
 
-<div class="card bg-base-100 shadow">
-    <div class="card-body">
-        <!-- Header -->
-        <div class="flex items-center justify-between">
-            <div>
-                <h3 class="card-title text-lg">
-                    {% set others = [] %}
-                    {% for p in participants if p != user_id %}
-                        {% if others.append(p) %}{% endif %}
-                    {% endfor %}
-                    {{ others | join(', ') }}
-                </h3>
-                <div class="text-sm text-base-content/60">
-                    {% if conversation.type == 'direct' %}Direct message
-                    {% elif conversation.type == 'team_group' %}Group: {{ conversation.name }}
-                    {% else %}Project group{% endif %}
-                    &middot; {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
-                    {% if conversation.project %}
-                    <span class="badge badge-ghost badge-sm ml-1">{{ conversation.project }}</span>
-                    {% endif %}
-                </div>
+<div class="bg-base-100 border border-base-300 rounded">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-2.5 border-b border-base-200">
+        <div>
+            <div class="text-sm font-semibold">
+                {% set others = [] %}
+                {% for p in participants if p != user_id %}
+                    {% if others.append(p) %}{% endif %}
+                {% endfor %}
+                {{ others | join(', ') }}
             </div>
-            <button hx-post="/web/conversation/{{ conversation.id }}/archive"
-                    hx-target="#main-content"
-                    hx-swap="innerHTML"
-                    class="btn btn-ghost btn-sm">
-                {% if is_archived is defined and is_archived %}Unarchive{% else %}Archive{% endif %}
-            </button>
+            <div class="text-xs text-base-content/40 mt-0.5">
+                {% if conversation.type == 'direct' %}Direct
+                {% elif conversation.type == 'team_group' %}{{ conversation.name }}
+                {% else %}Project group{% endif %}
+                - {{ messages | length }} message{{ 's' if messages | length != 1 else '' }}
+                {% if conversation.project %}
+                - {{ conversation.project }}
+                {% endif %}
+            </div>
         </div>
+        <button hx-post="/web/conversation/{{ conversation.id }}/archive"
+                hx-target="#main-content"
+                hx-swap="innerHTML"
+                class="btn btn-ghost btn-sm h-7 min-h-0 text-xs text-base-content/40 hover:text-base-content">
+            {% if is_archived is defined and is_archived %}Unarchive{% else %}Archive{% endif %}
+        </button>
+    </div>
 
-        <div class="divider my-2"></div>
-
-        <!-- Messages -->
-        <div id="message-list" class="space-y-1 max-h-[calc(100vh-320px)] overflow-y-auto pr-2"
-             hx-get="/web/conversation/{{ conversation.id }}/messages"
-             hx-trigger="every 10s"
-             hx-swap="innerHTML">
-            {% for msg in messages %}
-            <div class="chat {{ 'chat-end' if msg.from_user == user_id else 'chat-start' }}">
-                <div class="chat-header text-sm mb-1">
-                    {{ msg.from_user }}
+    <!-- Messages -->
+    <div id="message-list" class="max-h-[calc(100vh-220px)] overflow-y-auto px-4 py-2"
+         hx-get="/web/conversation/{{ conversation.id }}/messages"
+         hx-trigger="every 10s"
+         hx-swap="innerHTML">
+        {% for msg in messages %}
+        <div class="flex gap-3 py-3 border-b border-base-200 last:border-b-0">
+            <div class="w-8 h-8 rounded bg-base-200 flex items-center justify-center text-xs font-medium text-base-content/50 shrink-0 mt-0.5">
+                {{ msg.from_user[:2] | upper }}
+            </div>
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 mb-0.5">
+                    <span class="text-sm font-semibold">{{ msg.from_user }}</span>
                     {% if is_ai_user(msg.from_user) %}
-                    <span class="badge badge-info badge-xs ml-1">AI</span>
+                    <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">Bot</span>
                     {% endif %}
-                    <time class="text-xs opacity-50 ml-1">{{ msg.created_at | relative_time }}</time>
-                </div>
-                <div class="chat-bubble {{ 'chat-bubble-primary' if msg.from_user == user_id else '' }}">
-                    {% if msg.content_type == 'application/json' %}
-                    <div class="prose-msg text-sm">
-                        <pre class="bg-base-200 p-3 rounded-lg text-xs overflow-x-auto"><code>{{ msg.body | pretty_json }}</code></pre>
-                    </div>
-                    {% else %}
-                    <div class="prose-msg text-sm">{{ msg.body | markdown }}</div>
-                    {% endif %}
-                </div>
-                <div class="chat-footer text-xs opacity-50">
-                    {% if msg.subject %}Re: {{ msg.subject }}{% endif %}
+                    <span class="text-xs text-base-content/30">{{ msg.created_at | relative_time }}</span>
                     {% if msg.ack_state is defined and msg.ack_state and msg.ack_state != 'pending' %}
-                    <span class="badge badge-xs ml-1
-                        {% if msg.ack_state == 'received' %}badge-info
-                        {% elif msg.ack_state == 'processing' %}badge-warning
-                        {% elif msg.ack_state == 'completed' %}badge-success
-                        {% elif msg.ack_state == 'failed' %}badge-error
-                        {% endif %}">{{ msg.ack_state }}</span>
+                    <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">{{ msg.ack_state }}</span>
                     {% endif %}
                 </div>
+                {% if msg.content_type == 'application/json' %}
+                <div class="prose-msg text-sm text-base-content/80">
+                    <pre class="bg-base-200 p-2.5 rounded text-xs overflow-x-auto mt-1"><code>{{ msg.body | pretty_json }}</code></pre>
+                </div>
+                {% else %}
+                <div class="prose-msg text-sm text-base-content/80">{{ msg.body | markdown }}</div>
+                {% endif %}
+                {% if msg.subject %}
+                <div class="text-xs text-base-content/30 mt-1">Re: {{ msg.subject }}</div>
+                {% endif %}
             </div>
-            {% endfor %}
         </div>
+        {% endfor %}
+    </div>
 
-        <div class="divider my-2"></div>
-
-        <!-- Reply form -->
+    <!-- Reply form -->
+    <div class="border-t border-base-200 px-4 py-2.5">
         <form hx-post="/web/conversation/{{ conversation.id }}/reply"
               hx-target="#main-content"
               hx-swap="innerHTML"
               class="flex gap-2 items-end">
-            <textarea name="body" rows="2" placeholder="Write a reply..."
-                      class="textarea textarea-bordered flex-1 text-sm" required></textarea>
-            <button type="submit" class="btn btn-primary btn-sm">Reply</button>
+            <textarea name="body" rows="2" placeholder="Reply..."
+                      class="textarea textarea-bordered flex-1 text-sm border-base-300 rounded" required></textarea>
+            <button type="submit" class="btn btn-neutral btn-sm h-9">Reply</button>
         </form>
     </div>
 </div>
@@ -90,9 +84,11 @@
 (function() {
     var project = document.getElementById('project-filter');
     var participant = document.getElementById('participant-filter');
+    var archived = document.getElementById('show-archived');
     var pVal = project ? project.value : '';
     var partVal = participant ? participant.value : '';
-    var url = '/web/inbox/conversations?project=' + encodeURIComponent(pVal) + '&participant=' + encodeURIComponent(partVal);
+    var archVal = archived && archived.checked ? '&archived=true' : '';
+    var url = '/web/inbox/conversations?project=' + encodeURIComponent(pVal) + '&participant=' + encodeURIComponent(partVal) + archVal;
     htmx.ajax('GET', url, '#conversation-list');
 
     var el = document.getElementById('message-list');

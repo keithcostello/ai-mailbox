@@ -1,30 +1,28 @@
 {% for msg in messages %}
-<div class="chat {{ 'chat-end' if msg.from_user == user_id else 'chat-start' }}">
-    <div class="chat-header text-sm mb-1">
-        {{ msg.from_user }}
-        {% if is_ai_user(msg.from_user) %}
-        <span class="badge badge-info badge-xs ml-1">AI</span>
-        {% endif %}
-        <time class="text-xs opacity-50 ml-1">{{ msg.created_at | relative_time }}</time>
+<div class="flex gap-3 py-3 border-b border-base-200 last:border-b-0">
+    <div class="w-8 h-8 rounded bg-base-200 flex items-center justify-center text-xs font-medium text-base-content/50 shrink-0 mt-0.5">
+        {{ msg.from_user[:2] | upper }}
     </div>
-    <div class="chat-bubble {{ 'chat-bubble-primary' if msg.from_user == user_id else '' }}">
+    <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 mb-0.5">
+            <span class="text-sm font-semibold">{{ msg.from_user }}</span>
+            {% if is_ai_user(msg.from_user) %}
+            <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">Bot</span>
+            {% endif %}
+            <span class="text-xs text-base-content/30">{{ msg.created_at | relative_time }}</span>
+            {% if msg.ack_state is defined and msg.ack_state and msg.ack_state != 'pending' %}
+            <span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">{{ msg.ack_state }}</span>
+            {% endif %}
+        </div>
         {% if msg.content_type == 'application/json' %}
-        <div class="prose-msg text-sm">
-            <pre class="bg-base-200 p-3 rounded-lg text-xs overflow-x-auto"><code>{{ msg.body | pretty_json }}</code></pre>
+        <div class="prose-msg text-sm text-base-content/80">
+            <pre class="bg-base-200 p-2.5 rounded text-xs overflow-x-auto mt-1"><code>{{ msg.body | pretty_json }}</code></pre>
         </div>
         {% else %}
-        <div class="prose-msg text-sm">{{ msg.body | markdown }}</div>
+        <div class="prose-msg text-sm text-base-content/80">{{ msg.body | markdown }}</div>
         {% endif %}
-    </div>
-    <div class="chat-footer text-xs opacity-50">
-        {% if msg.subject %}Re: {{ msg.subject }}{% endif %}
-        {% if msg.ack_state is defined and msg.ack_state and msg.ack_state != 'pending' %}
-        <span class="badge badge-xs ml-1
-            {% if msg.ack_state == 'received' %}badge-info
-            {% elif msg.ack_state == 'processing' %}badge-warning
-            {% elif msg.ack_state == 'completed' %}badge-success
-            {% elif msg.ack_state == 'failed' %}badge-error
-            {% endif %}">{{ msg.ack_state }}</span>
+        {% if msg.subject %}
+        <div class="text-xs text-base-content/30 mt-1">Re: {{ msg.subject }}</div>
         {% endif %}
     </div>
 </div>

@@ -89,7 +89,7 @@ async def test_web_login_page_renders():
     assert resp.status_code == 200
     assert "daisyui" in resp.text.lower()
     assert "htmx.org" in resp.text
-    assert "fantasy" in resp.text.lower()  # DaisyUI theme
+    assert "corporate" in resp.text.lower()  # DaisyUI theme
 
 
 @pytest.mark.asyncio

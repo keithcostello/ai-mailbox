@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="fantasy">
+<html lang="en" data-theme="corporate">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,37 +8,35 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
-        .prose-msg pre { background: oklch(var(--b2)); padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
-        .prose-msg code { font-size: 0.875em; }
-        .prose-msg p { margin: 0.25rem 0; }
-        .prose-msg ul, .prose-msg ol { margin: 0.25rem 0; padding-left: 1.25rem; }
-        .prose-msg table { border-collapse: collapse; margin: 0.5rem 0; }
-        .prose-msg th, .prose-msg td { border: 1px solid oklch(var(--b3)); padding: 0.25rem 0.5rem; }
+        .prose-msg pre { background: oklch(var(--b2)); padding: 0.5rem; border-radius: 0.25rem; overflow-x: auto; }
+        .prose-msg code { font-size: 0.8125em; }
+        .prose-msg p { margin: 0.125rem 0; }
+        .prose-msg ul, .prose-msg ol { margin: 0.125rem 0; padding-left: 1.25rem; }
+        .prose-msg table { border-collapse: collapse; margin: 0.25rem 0; font-size: 0.8125em; }
+        .prose-msg th, .prose-msg td { border: 1px solid oklch(var(--b3)); padding: 0.125rem 0.375rem; }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
     {% if user_id %}
-    <div class="navbar bg-neutral text-neutral-content shadow-lg px-4">
-        <div class="flex-1 flex items-center gap-4">
-            <a class="btn btn-ghost text-xl normal-case" href="/web/inbox">AI Mailbox</a>
-            <div class="form-control">
-                <input type="text" placeholder="Search messages..."
-                       class="input input-bordered input-sm w-64 text-base-content"
-                       id="search-input"
-                       hx-get="/web/search"
-                       hx-trigger="keyup changed delay:300ms"
-                       hx-target="#main-content"
-                       hx-include="this"
-                       name="q">
-            </div>
+    <div class="navbar bg-base-100 border-b border-base-300 px-4 h-12 min-h-0">
+        <div class="flex-1 flex items-center gap-3">
+            <a class="text-sm font-semibold tracking-tight" href="/web/inbox">AI Mailbox</a>
+            <input type="text" placeholder="Search..."
+                   class="input input-bordered input-sm w-56 h-8 min-h-0 text-xs bg-base-200/50 border-base-300"
+                   id="search-input"
+                   hx-get="/web/search"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#main-content"
+                   hx-include="this"
+                   name="q">
         </div>
-        <div class="flex-none gap-2">
-            <a class="btn btn-ghost btn-sm" href="/web/inbox">Inbox</a>
-            <a class="btn btn-ghost btn-sm" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
-            <a class="btn btn-ghost btn-sm" href="/web/users">Users</a>
-            <div class="divider divider-horizontal mx-0 before:bg-neutral-content/20 after:bg-neutral-content/20"></div>
-            <span class="text-sm opacity-70">{{ display_name }}</span>
-            <a class="btn btn-ghost btn-sm text-error" href="/web/logout">Logout</a>
+        <div class="flex-none flex items-center gap-1">
+            <a class="btn btn-ghost btn-sm h-8 min-h-0 text-xs" href="/web/inbox">Inbox</a>
+            <a class="btn btn-ghost btn-sm h-8 min-h-0 text-xs" hx-get="/web/compose" hx-target="#main-content" hx-push-url="true">Compose</a>
+            <a class="btn btn-ghost btn-sm h-8 min-h-0 text-xs" href="/web/users">Users</a>
+            <div class="w-px h-4 bg-base-300 mx-1"></div>
+            <span class="text-xs text-base-content/50">{{ display_name }}</span>
+            <a class="btn btn-ghost btn-sm h-8 min-h-0 text-xs text-base-content/50 hover:text-error" href="/web/logout">Logout</a>
         </div>
     </div>
     {% endif %}

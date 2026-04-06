@@ -617,7 +617,7 @@ class TestFilterDropdowns:
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
         assert "clearFilters" in resp.text
-        assert "Clear filters" in resp.text
+        assert "Clear" in resp.text
 
     def test_thread_view_sidebar_refresh_reads_filters(self, client, web_db):
         """Thread view should NOT hardcode a bare /web/inbox/conversations hx-get.
@@ -705,7 +705,7 @@ class TestSearchBar:
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
         assert 'id="search-input"' in resp.text
-        assert 'placeholder="Search messages..."' in resp.text
+        assert 'placeholder="Search..."' in resp.text
 
     def test_search_input_has_htmx_trigger(self, client):
         token = _make_session_cookie("keith")
@@ -856,15 +856,14 @@ class TestAckBadges:
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
-        assert "badge-info" in resp.text
         assert "received" in resp.text
+        assert "bg-base-200" in resp.text
 
     def test_processing_badge_in_thread(self, client, web_db):
         conv_id, _ = self._seed_with_ack(web_db, "processing")
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
-        assert "badge-warning" in resp.text
         assert "processing" in resp.text
 
     def test_completed_badge_in_thread(self, client, web_db):
@@ -872,7 +871,6 @@ class TestAckBadges:
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
-        assert "badge-success" in resp.text
         assert "completed" in resp.text
 
     def test_failed_badge_in_thread(self, client, web_db):
@@ -880,26 +878,24 @@ class TestAckBadges:
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
-        assert "badge-error" in resp.text
         assert "failed" in resp.text
 
-    def test_pending_no_badge(self, client, web_db):
+    def test_pending_no_ack_label(self, client, web_db):
         from ai_mailbox.db.queries import find_or_create_direct_conversation, insert_message
         conv_id = find_or_create_direct_conversation(web_db, "keith", "amy", "general")
         insert_message(web_db, conv_id, "keith", "No ack yet")
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}", headers={"HX-Request": "true"})
-        # pending messages should NOT show an ack badge
-        assert "badge-info" not in resp.text
-        assert "badge-warning" not in resp.text
+        # pending messages should NOT show an ack label
+        assert ">received<" not in resp.text
+        assert ">processing<" not in resp.text
 
     def test_ack_badge_in_message_list_partial(self, client, web_db):
         conv_id, _ = self._seed_with_ack(web_db, "completed")
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get(f"/web/conversation/{conv_id}/messages")
-        assert "badge-success" in resp.text
         assert "completed" in resp.text
 
 
@@ -957,7 +953,7 @@ class TestWebArchive:
         client.cookies.set("session", token)
         resp = client.get("/web/inbox")
         assert "show-archived" in resp.text
-        assert "Show archived" in resp.text
+        assert "Archived" in resp.text
 
     def test_archived_conversations_filtered_by_default(self, client, web_db):
         conv_id = self._seed(web_db)
@@ -1002,11 +998,11 @@ class TestUserDirectory:
         assert "Keith" in resp.text
         assert "Amy" in resp.text
 
-    def test_shows_user_type_badge(self, client, web_db):
+    def test_shows_user_type(self, client, web_db):
         token = _make_session_cookie("keith")
         client.cookies.set("session", token)
         resp = client.get("/web/users")
-        assert "Human" in resp.text
+        assert "human" in resp.text
 
     def test_shows_online_status(self, client, web_db):
         token = _make_session_cookie("keith")

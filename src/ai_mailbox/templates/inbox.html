@@ -1,30 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Inbox - AI Mailbox{% endblock %}
 {% block content %}
-<div class="flex h-[calc(100vh-68px)]">
+<div class="flex h-[calc(100vh-48px)]">
     <!-- Sidebar -->
-    <div class="w-80 bg-base-100 border-r border-base-300 flex flex-col flex-shrink-0">
-        <div class="p-3 border-b border-base-300 space-y-2">
-            <select id="project-filter" class="select select-bordered select-sm w-full"
+    <div class="w-72 bg-base-100 border-r border-base-300 flex flex-col shrink-0">
+        <div class="p-2.5 border-b border-base-300 space-y-1.5">
+            <select id="project-filter" class="select select-bordered select-sm w-full h-8 min-h-0 text-xs"
                     onchange="refreshConversations()">
                 <option value="">All projects</option>
                 {% for p in projects %}
                 <option value="{{ p }}" {% if project_filter == p %}selected{% endif %}>{{ p }}</option>
                 {% endfor %}
             </select>
-            <select id="participant-filter" class="select select-bordered select-sm w-full"
+            <select id="participant-filter" class="select select-bordered select-sm w-full h-8 min-h-0 text-xs"
                     onchange="refreshConversations()">
                 <option value="">All people</option>
                 {% for p in partners %}
                 <option value="{{ p }}" {% if participant_filter == p %}selected{% endif %}>{{ p }}</option>
                 {% endfor %}
             </select>
-            <label class="label cursor-pointer gap-2 py-0">
-                <span class="label-text text-xs">Show archived</span>
-                <input type="checkbox" id="show-archived" class="toggle toggle-xs"
-                       onchange="refreshConversations()">
-            </label>
-            <a href="#" onclick="clearFilters(event)" class="block text-center text-xs text-base-content/40 hover:text-base-content/60">Clear filters</a>
+            <div class="flex items-center justify-between">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" id="show-archived" class="checkbox checkbox-xs"
+                           onchange="refreshConversations()">
+                    <span class="text-xs text-base-content/50">Archived</span>
+                </label>
+                <a href="#" onclick="clearFilters(event)" class="text-xs text-base-content/30 hover:text-base-content/50">Clear</a>
+            </div>
         </div>
         <div id="conversation-list" class="flex-1 overflow-y-auto"
              hx-get="/web/inbox/conversations{% if project_filter %}?project={{ project_filter }}{% endif %}{% if participant_filter %}&participant={{ participant_filter }}{% endif %}"
@@ -34,7 +36,7 @@
     </div>
 
     <!-- Main content -->
-    <div id="main-content" class="flex-1 overflow-y-auto p-4">
+    <div id="main-content" class="flex-1 overflow-y-auto p-3 bg-base-200/30">
         {% if thread_content %}
         {{ thread_content | safe }}
         {% else %}
@@ -57,6 +59,7 @@ function clearFilters(e) {
     e.preventDefault();
     document.getElementById('project-filter').value = '';
     document.getElementById('participant-filter').value = '';
+    document.getElementById('show-archived').checked = false;
     htmx.ajax('GET', '/web/inbox/conversations', '#conversation-list');
 }
 </script>
