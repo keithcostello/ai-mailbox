@@ -31,6 +31,7 @@ from ai_mailbox.tools.add_participant import tool_add_participant
 from ai_mailbox.tools.search import tool_search_messages
 from ai_mailbox.tools.acknowledge import tool_acknowledge
 from ai_mailbox.tools.archive import tool_archive_conversation
+from ai_mailbox.tools.list_participants import tool_list_participants
 from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
 from ai_mailbox.web_oauth import create_oauth_routes
@@ -349,6 +350,13 @@ def create_app() -> object:
         return tool_archive_conversation(
             db, user_id=uid, conversation_id=conversation_id, archive=archive,
         )
+
+    @mcp.tool()
+    def mailbox_list_participants(conversation_id: str) -> dict:
+        """List current participants in an AI Mailbox conversation. Returns authoritative membership state."""
+        uid = _get_user()
+        logger.info(f"list_participants: user={uid} conv={conversation_id}")
+        return tool_list_participants(db, user_id=uid, conversation_id=conversation_id)
 
     # --- Login page ---
 
