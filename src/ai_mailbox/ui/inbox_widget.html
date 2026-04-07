@@ -50,7 +50,13 @@
 </head>
 <body>
 <div id="app">
-    <div class="loading">Loading...</div>
+    <div class="header">
+        <div class="header-title">AI Mailbox</div>
+        <button class="btn btn-primary" onclick="window.__compose && window.__compose()">Compose</button>
+    </div>
+    <div class="scroll-area" id="content">
+        <div class="empty">Connecting to mailbox...</div>
+    </div>
 </div>
 
 <script>
