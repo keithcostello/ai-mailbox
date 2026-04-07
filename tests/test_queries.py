@@ -539,9 +539,13 @@ class TestListMessagesQuery:
         # so test that filter by user works
         conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
         queries.insert_message(db, conv_id, "amy", "hello keith")
+        # amy's own sent message should NOT appear as unread to her
         msgs, _ = queries.list_messages_query(db, "amy")
-        # amy should also see this (she's a participant)
-        assert len(msgs) == 1
+        assert len(msgs) == 0
+        # but keith should see it as unread
+        msgs2, _ = queries.list_messages_query(db, "keith")
+        assert len(msgs2) == 1
+        assert msgs2[0]["body"] == "hello keith"
 
 
 class TestGetUserProjects:

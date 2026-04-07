@@ -42,6 +42,28 @@ class TestListMessagesBasic:
         result = tool_list_messages(db, user_id="keith", unread_only=False)
         assert result["message_count"] == 2
 
+    def test_own_sent_messages_not_unread(self, db):
+        """User's own sent messages should not appear as unread."""
+        conv_id = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        queries.insert_message(db, conv_id, "amy", "from amy")
+        # Mark all read
+        queries.advance_read_cursor(db, conv_id, "keith", 1)
+        # Keith sends a message -- should NOT appear as unread to keith
+        queries.insert_message(db, conv_id, "keith", "from keith")
+        result = tool_list_messages(db, user_id="keith", unread_only=True)
+        assert result["message_count"] == 0
+
+    def test_own_sent_messages_not_unread_cross_conversation(self, db):
+        """Own messages excluded across multiple conversations."""
+        conv1 = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        conv2 = queries.find_or_create_direct_conversation(db, "keith", "amy", "alerts")
+        # Mark both read at 0
+        # Keith sends to both
+        queries.insert_message(db, conv1, "keith", "keith in general")
+        queries.insert_message(db, conv2, "keith", "keith in alerts")
+        result = tool_list_messages(db, user_id="keith", unread_only=True)
+        assert result["message_count"] == 0
+
     def test_empty_inbox(self, db):
         result = tool_list_messages(db, user_id="keith")
         assert result["message_count"] == 0
