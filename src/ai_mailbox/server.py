@@ -138,9 +138,14 @@ def create_app() -> object:
     provider = MailboxOAuthProvider(db=db, jwt_secret=config.jwt_secret)
     _oauth_provider = provider
 
-    # MCP server with OAuth
-    issuer_url = f"https://ai-mailbox-server-production.up.railway.app"
-    if not config.database_url:
+    # MCP server with OAuth — derive issuer URL from environment
+    import os
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if railway_domain:
+        issuer_url = f"https://{railway_domain}"
+    elif config.database_url:
+        issuer_url = "https://ai-mailbox-server-production.up.railway.app"
+    else:
         issuer_url = "http://localhost:8000"  # Local/test mode
 
     auth_settings = AuthSettings(
