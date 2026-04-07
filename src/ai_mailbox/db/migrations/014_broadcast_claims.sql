@@ -3,8 +3,8 @@
 -- Cooldown prevents re-evaluation spam after decline.
 
 CREATE TABLE IF NOT EXISTS broadcast_claims (
-    id VARCHAR(64) PRIMARY KEY,
-    broadcast_id VARCHAR(64) NOT NULL REFERENCES broadcast_requests(id),
+    id UUID PRIMARY KEY,
+    broadcast_id UUID NOT NULL REFERENCES broadcast_requests(id),
     claimant_id VARCHAR(64) NOT NULL REFERENCES users(id),
     status VARCHAR(20) NOT NULL DEFAULT 'claimed',
     gate1_approved_at TIMESTAMP,
