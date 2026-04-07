@@ -294,6 +294,30 @@ class TestDataMigration:
         assert stats2["conversations_created"] == 0  # Already migrated
         conn.close()
 
+    def test_read_cursor_with_boolean_param(self):
+        """read column compared via parameterized True (not hardcoded 1).
+
+        PostgreSQL stores read as BOOLEAN, not INTEGER. The migration must
+        use a parameterized query so psycopg sends a proper boolean.
+        Before the fix, migrate_003.py used 'm.read = 1' which fails on PG.
+        """
+        from ai_mailbox.db.connection import SQLiteDB
+        from ai_mailbox.db.migrations.migrate_003 import migrate_003_data
+        conn = _make_old_db_with_data()
+        # Overwrite m2's read flag using parameterized True (simulates PG behavior)
+        conn.execute("UPDATE messages SET read = ? WHERE id = 'm2'", (True,))
+        conn.commit()
+        db = SQLiteDB(conn)
+        migrate_003_data(db)
+        # keith's last_read_sequence in general conv should be 2 (m2 was read)
+        row = conn.execute(
+            """SELECT cp.last_read_sequence FROM conversation_participants cp
+               JOIN conversations c ON cp.conversation_id = c.id
+               WHERE cp.user_id = 'keith' AND c.project = 'general'"""
+        ).fetchone()
+        assert row[0] == 2, f"Expected last_read_sequence=2, got {row[0]}"
+        conn.close()
+
     def test_empty_db_no_op(self):
         from ai_mailbox.db.connection import SQLiteDB
         from ai_mailbox.db.migrations.migrate_003 import migrate_003_data
