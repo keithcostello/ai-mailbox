@@ -8,10 +8,11 @@ UUIDs and timestamps generated in Python for cross-DB compatibility.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from ai_mailbox.config import DEAD_LETTER_THRESHOLD_HOURS
 from ai_mailbox.errors import make_error
 
 if TYPE_CHECKING:
@@ -264,6 +265,23 @@ def insert_message(
     )
     db.commit()
     return {"id": msg_id, "sequence_number": next_seq}
+
+
+def insert_system_message(
+    db: DBConnection,
+    conversation_id: str,
+    body: str,
+    *,
+    content_type: str = "text/plain",
+) -> dict:
+    """Insert a system-generated message. Bypasses participant checks.
+
+    Returns {id, sequence_number}.
+    """
+    return insert_message(
+        db, conversation_id, "system", body,
+        content_type=content_type,
+    )
 
 
 def get_message(db: DBConnection, message_id: str) -> dict | None:
@@ -690,5 +708,67 @@ def update_last_seen(db: DBConnection, user_id: str) -> None:
 
 
 def get_all_users(db: DBConnection) -> list[dict]:
-    """Fetch all users."""
-    return db.fetchall("SELECT * FROM users ORDER BY id", ())
+    """Fetch all users, excluding the reserved 'system' user."""
+    return db.fetchall("SELECT * FROM users WHERE user_type != 'system' ORDER BY id", ())
+
+
+# ---------------------------------------------------------------------------
+# Dead letter handling
+# ---------------------------------------------------------------------------
+
+def is_user_offline(db: DBConnection, user_id: str) -> bool:
+    """Check if a user is offline (last_seen older than threshold or NULL)."""
+    user = get_user(db, user_id)
+    if not user or not user.get("last_seen"):
+        return True
+    threshold = datetime.now(timezone.utc) - timedelta(hours=DEAD_LETTER_THRESHOLD_HOURS)
+    # Parse last_seen — handle both ISO formats
+    last_seen_str = user["last_seen"]
+    try:
+        last_seen = datetime.fromisoformat(last_seen_str)
+    except (ValueError, TypeError):
+        return True
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return last_seen < threshold
+
+
+def process_dead_letters(db: DBConnection, user_id: str) -> int:
+    """Transition queued messages to delivered for conversations the user participates in.
+
+    Called when a previously-offline user becomes active again.
+    Returns the number of messages transitioned.
+    """
+    rows = db.fetchall(
+        """SELECT m.id FROM messages m
+           JOIN conversation_participants cp ON m.conversation_id = cp.conversation_id
+           WHERE cp.user_id = ? AND m.from_user != ? AND m.delivery_status = 'queued'""",
+        (user_id, user_id),
+    )
+    if not rows:
+        return 0
+    ids = [r["id"] for r in rows]
+    placeholders = ",".join("?" for _ in ids)
+    db.execute(
+        f"UPDATE messages SET delivery_status = 'delivered' WHERE id IN ({placeholders})",
+        tuple(ids),
+    )
+    db.commit()
+    return len(ids)
+
+
+def get_dead_letters(db: DBConnection, user_id: str) -> list[dict]:
+    """Return queued (undelivered) messages in conversations the user participates in."""
+    return db.fetchall(
+        """SELECT m.* FROM messages m
+           JOIN conversation_participants cp ON m.conversation_id = cp.conversation_id
+           WHERE cp.user_id = ? AND m.from_user != ? AND m.delivery_status = 'queued'
+           ORDER BY m.created_at ASC""",
+        (user_id, user_id),
+    )
+
+
+def update_last_seen_and_process_dead_letters(db: DBConnection, user_id: str) -> int:
+    """Update last_seen and process any dead letters. Returns count of redelivered messages."""
+    update_last_seen(db, user_id)
+    return process_dead_letters(db, user_id)

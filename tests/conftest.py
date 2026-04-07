@@ -1,6 +1,7 @@
 """Test fixtures -- SQLite in-memory DB via real migration path."""
 
 import sqlite3
+from datetime import datetime, timezone
 
 import pytest
 
@@ -21,14 +22,16 @@ def db():
     conn.execute("PRAGMA foreign_keys = ON")
     ensure_schema_sqlite(conn)
 
-    # Seed test users
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Seed test users (with last_seen so they are "online" by default)
     conn.execute(
-        "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
-        ("keith", "Keith", KEITH_API_KEY),
+        "INSERT INTO users (id, display_name, api_key, last_seen) VALUES (?, ?, ?, ?)",
+        ("keith", "Keith", KEITH_API_KEY, now),
     )
     conn.execute(
-        "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
-        ("amy", "Amy", AMY_API_KEY),
+        "INSERT INTO users (id, display_name, api_key, last_seen) VALUES (?, ?, ?, ?)",
+        ("amy", "Amy", AMY_API_KEY, now),
     )
     conn.commit()
 

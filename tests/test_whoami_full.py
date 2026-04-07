@@ -28,6 +28,9 @@ class TestWhoamiBasic:
         assert result["session_mode"] == "persistent"
 
     def test_returns_last_seen_none(self, db):
+        # Clear last_seen to test the None case
+        db._conn.execute("UPDATE users SET last_seen = NULL WHERE id = 'keith'")
+        db._conn.commit()
         result = tool_whoami(db, user_id="keith")
         assert result["last_seen"] is None
 

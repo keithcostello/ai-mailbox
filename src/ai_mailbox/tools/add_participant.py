@@ -10,6 +10,7 @@ from ai_mailbox.db.queries import (
     get_conversation,
     get_conversation_participants,
     get_user,
+    insert_system_message,
 )
 from ai_mailbox.errors import make_error
 
@@ -59,6 +60,7 @@ def tool_add_participant(
         return make_error("GROUP_TOO_LARGE", f"Group exceeds {MAX_GROUP_SIZE} participants")
 
     add_participant(db, conversation_id, user_to_add)
+    insert_system_message(db, conversation_id, f"{user_to_add} was added to the conversation")
     new_participants = get_conversation_participants(db, conversation_id)
 
     return {

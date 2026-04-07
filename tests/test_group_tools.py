@@ -197,6 +197,9 @@ class TestListUsersExtended:
             assert "user_type" in u
 
     def test_online_false_when_never_seen(self, db):
+        # Clear last_seen to simulate never-seen users
+        db._conn.execute("UPDATE users SET last_seen = NULL")
+        db._conn.commit()
         result = tool_list_users(db, user_id="keith")
         for u in result["users"]:
             assert u["online"] is False

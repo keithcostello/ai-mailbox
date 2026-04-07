@@ -123,6 +123,12 @@ def ensure_schema_sqlite(conn: sqlite3.Connection) -> None:
             if "duplicate column" in str(e).lower():
                 continue
             raise
+        except sqlite3.IntegrityError as e:
+            # Idempotent INSERT ... WHERE NOT EXISTS may still hit
+            # unique constraints on re-run; safe to skip.
+            if "unique" in str(e).lower():
+                continue
+            raise
     conn.commit()
 
     # BUG-001: SQLite cannot ALTER COLUMN, so rebuild messages table to make

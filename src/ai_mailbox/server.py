@@ -403,7 +403,7 @@ def create_app() -> object:
     # --- Health endpoint ---
 
     async def health(request: StarletteRequest):
-        row = db.fetchone("SELECT COUNT(*) as cnt FROM users")
+        row = db.fetchone("SELECT COUNT(*) as cnt FROM users WHERE user_type != 'system'")
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
