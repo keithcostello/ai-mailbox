@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from starlette.applications import Starlette
 
 from ai_mailbox.db.connection import SQLiteDB
+from ai_mailbox.db.schema import ensure_schema_sqlite
 from ai_mailbox.oauth import MailboxOAuthProvider, hash_password
 from ai_mailbox.web import create_web_routes
 
@@ -96,7 +97,7 @@ def settings_db():
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(_SCHEMA_SQL)
+    ensure_schema_sqlite(conn)
     conn.execute(
         "INSERT INTO users (id, display_name, api_key, password_hash, email, auth_provider) VALUES (?, ?, ?, ?, ?, ?)",
         ("keith", "Keith", "test-key", hash_password("testpass"), "keith@example.com", "github"),

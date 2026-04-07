@@ -102,6 +102,10 @@ class TestErrorCodeRegistry:
             "INVALID_JSON",
             # Sprint 5
             "INVALID_STATE_TRANSITION",
+            # Sprint 7
+            "SYSTEM_USER_DENIED",
+            # Sprint 8
+            "APPROVAL_NOT_PENDING", "INVALID_ACTION", "PROFILE_TOO_LARGE",
         }
         assert set(ERROR_CODES.keys()) == expected
 

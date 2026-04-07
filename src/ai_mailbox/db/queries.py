@@ -225,6 +225,7 @@ def insert_message(
     reply_to: str | None = None,
     idempotency_key: str | None = None,
     content_type: str = "text/plain",
+    approval_status: str | None = None,
 ) -> dict:
     """Insert message, assign sequence number. Returns {id, sequence_number} or error dict."""
     msg_id = _uuid()
@@ -240,10 +241,11 @@ def insert_message(
     try:
         db.execute(
             """INSERT INTO messages (id, conversation_id, from_user, sequence_number,
-                                     subject, body, content_type, idempotency_key, reply_to, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     subject, body, content_type, idempotency_key, reply_to,
+                                     created_at, approval_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (msg_id, conversation_id, from_user, next_seq, subject, body,
-             content_type, idempotency_key, reply_to, now),
+             content_type, idempotency_key, reply_to, now, approval_status),
         )
     except (sqlite3.IntegrityError, Exception) as e:
         err = str(e).lower()
@@ -773,6 +775,76 @@ def get_dead_letters(db: DBConnection, user_id: str) -> list[dict]:
            ORDER BY m.created_at ASC""",
         (user_id, user_id),
     )
+
+
+def get_user_profile_metadata(db: DBConnection, user_id: str) -> dict:
+    """Return parsed profile_metadata JSON for a user. Returns {} if not set or invalid."""
+    import json as _json
+    user = get_user(db, user_id)
+    if not user:
+        return {}
+    raw = user.get("profile_metadata") or "{}"
+    try:
+        return _json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+
+
+def update_user_profile_metadata(db: DBConnection, user_id: str, metadata: dict) -> None:
+    """Write profile_metadata as JSON. Full replace."""
+    import json as _json
+    db.execute(
+        "UPDATE users SET profile_metadata = ? WHERE id = ?",
+        (_json.dumps(metadata), user_id),
+    )
+    db.commit()
+
+
+def find_experts_by_tags(
+    db: DBConnection,
+    tags: list[str],
+    limit: int = 10,
+    exclude_user: str | None = None,
+) -> list[dict]:
+    """Find users whose expertise_tags overlap with the given tags.
+
+    Returns ranked list: highest match_score first.
+    SQLite implementation (Python-side filtering). PostgreSQL would use jsonb.
+    """
+    import json as _json
+
+    all_users = db.fetchall(
+        "SELECT id, display_name, user_type, profile_metadata FROM users "
+        "WHERE user_type != 'system' ORDER BY id",
+        (),
+    )
+
+    tag_set = set(tags)
+    scored = []
+    for u in all_users:
+        if exclude_user and u["id"] == exclude_user:
+            continue
+        raw = u.get("profile_metadata") or "{}"
+        try:
+            meta = _json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        user_tags = set(meta.get("expertise_tags", []))
+        matched = tag_set & user_tags
+        if not matched:
+            continue
+        scored.append({
+            "user_id": u["id"],
+            "display_name": u["display_name"],
+            "user_type": u.get("user_type", "human"),
+            "matched_tags": sorted(matched),
+            "match_score": len(matched),
+            "expertise_tags": meta.get("expertise_tags", []),
+            "bio": meta.get("bio"),
+        })
+
+    scored.sort(key=lambda x: (-x["match_score"], x["user_id"]))
+    return scored[:limit]
 
 
 def update_last_seen_and_process_dead_letters(db: DBConnection, user_id: str) -> int:

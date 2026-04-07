@@ -32,6 +32,9 @@ from ai_mailbox.tools.search import tool_search_messages
 from ai_mailbox.tools.acknowledge import tool_acknowledge
 from ai_mailbox.tools.archive import tool_archive_conversation
 from ai_mailbox.tools.list_participants import tool_list_participants
+from ai_mailbox.tools.update_profile import tool_update_profile
+from ai_mailbox.tools.find_experts import tool_find_experts
+from ai_mailbox.tools.approve_ai_response import tool_approve_ai_response
 from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
 from ai_mailbox.web_oauth import create_oauth_routes
@@ -357,6 +360,27 @@ def create_app() -> object:
         uid = _get_user()
         logger.info(f"list_participants: user={uid} conv={conversation_id}")
         return tool_list_participants(db, user_id=uid, conversation_id=conversation_id)
+
+    @mcp.tool()
+    def mailbox_update_profile(metadata: dict, merge: bool = True) -> dict:
+        """Update your AI Mailbox profile metadata (team, expertise_tags, bio, etc.). AI auto-populates from observed context; human can edit."""
+        uid = _get_user()
+        logger.info(f"update_profile: user={uid} merge={merge}")
+        return tool_update_profile(db, user_id=uid, metadata=metadata, merge=merge)
+
+    @mcp.tool()
+    def mailbox_find_experts(tags: list[str], limit: int = 10) -> dict:
+        """Find AI Mailbox users whose expertise matches the given tags. For AI-to-AI routing."""
+        uid = _get_user()
+        logger.info(f"find_experts: user={uid} tags={tags}")
+        return tool_find_experts(db, user_id=uid, tags=tags, limit=limit)
+
+    @mcp.tool()
+    def mailbox_approve_ai_response(message_id: str, action: str) -> dict:
+        """Approve or reject an AI-drafted response. Only the sender's human can approve. Actions: 'approve', 'reject'."""
+        uid = _get_user()
+        logger.info(f"approve_ai_response: user={uid} message={message_id} action={action}")
+        return tool_approve_ai_response(db, user_id=uid, message_id=message_id, action=action)
 
     # --- Login page ---
 
