@@ -21,7 +21,15 @@ cd "C:/Projects/SINGLE PROJECTS/ai-mailbox" && py -m pytest tests/ -q
 5. Re-run `py -m pytest tests/ -q` until green.
 6. Only then proceed.
 
-## 2.4: Selective rerun (optional, for speed during iteration)
+## 2.4: Functional TDD check (mandatory for multi-tool features)
+
+If the change involves multiple tools working together:
+1. Verify a `test_{feature}_integration.py` file exists
+2. If not, write one before proceeding: seed realistic data, call tools in sequence, assert end state
+3. Run: `py -m pytest tests/test_{feature}_integration.py -v`
+4. Must include at least one happy-path flow and one failure/rejection flow
+
+## 2.5: Selective rerun (optional, for speed during iteration)
 
 If you know exactly which tool changed, use the tool-to-test manifest:
 

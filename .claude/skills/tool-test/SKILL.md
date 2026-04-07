@@ -27,6 +27,25 @@ Load each step file ONLY when reached. Do not preload all steps.
 - Every new tool must be added to the Tier 3 repeatable prompts table.
 - `py` not `python` for all test commands.
 
+## Functional TDD
+
+Standard TDD tests individual functions in isolation. **Functional TDD** tests the complete user-facing deliverable as an integrated flow. Both are required.
+
+**When to write functional TDD tests:**
+- Any feature that involves multiple tools working together (e.g., find_experts -> send ai-to-ai request -> approve response)
+- Any feature where the value is in the flow, not the individual function
+- Any feature that has seeded data prerequisites (e.g., user profiles for expert matching)
+
+**Structure:**
+1. A fixture that seeds realistic test data (users with profiles, conversations with messages)
+2. Tests that call tools in sequence as a user would
+3. Assertions on the end state, not intermediate steps
+4. At least one happy-path flow test and one rejection/failure flow test
+
+**Example:** `tests/test_ai_to_ai_integration.py` -- seeds 3 users with expertise profiles, then runs find -> request -> response -> approve as a single flow.
+
+**Naming convention:** `test_{feature}_integration.py` for functional TDD tests, separate from unit-level `test_{feature}.py` files.
+
 ## Trigger Rules
 
 | Change | Required Tiers |
