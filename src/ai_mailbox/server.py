@@ -244,9 +244,11 @@ def create_app() -> object:
             conversation_id=conversation_id,
             limit=limit, after_sequence=after_sequence,
         )
+        # Serialize through JSON to convert UUIDs/datetimes to strings
+        result_json = json.loads(json.dumps(result, default=str))
         return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(result))],
-            structuredContent=result,
+            content=[TextContent(type="text", text=json.dumps(result_json))],
+            structuredContent=result_json,
         )
 
     @mcp.tool()
