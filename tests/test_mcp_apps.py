@@ -42,15 +42,16 @@ class TestWidgetHtmlFile:
         html = _read_widget_html()
         assert "ontoolresult" in html
 
-    def test_references_daisyui(self):
-        """Widget uses DaisyUI for consistent styling with web UI."""
+    def test_has_inline_styles(self):
+        """Widget has inline CSS (no CDN dependencies)."""
         html = _read_widget_html()
-        assert "daisyui" in html.lower()
+        assert "<style>" in html
 
-    def test_has_ext_apps_import(self):
-        """Widget imports the MCP Apps client SDK."""
+    def test_has_inline_mcp_client(self):
+        """Widget has inline MCP Apps postMessage client (no SDK import)."""
         html = _read_widget_html()
-        assert "ext-apps" in html or "modelcontextprotocol" in html
+        assert "postMessage" in html
+        assert "jsonrpc" in html
 
     def test_has_inbox_view(self):
         """Widget has conversation list / inbox rendering."""

@@ -178,12 +178,7 @@ def create_app() -> object:
         name="Inbox Widget",
         description="Interactive inbox for AI Mailbox",
         mime_type="text/html;profile=mcp-app",
-        meta={"ui": {
-            "csp": {
-                "resourceDomains": ["cdn.jsdelivr.net", "cdn.tailwindcss.com"],
-                "connectDomains": ["cdn.jsdelivr.net"],
-            },
-        }},
+        meta={"ui": {}},  # No external CSP needed — all CSS/JS inlined
     )
     def inbox_widget_resource() -> str:
         html_path = Path(__file__).parent / "ui" / "inbox_widget.html"

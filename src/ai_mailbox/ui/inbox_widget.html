@@ -1,35 +1,126 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="corporate">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Mailbox</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .prose-msg pre { background: oklch(var(--b2)); padding: 0.5rem; border-radius: 0.25rem; overflow-x: auto; }
-        .prose-msg code { font-size: 0.8125em; }
-        .prose-msg p { margin: 0.125rem 0; }
-        .prose-msg ul, .prose-msg ol { margin: 0.125rem 0; padding-left: 1.25rem; }
-        .prose-msg table { border-collapse: collapse; margin: 0.25rem 0; font-size: 0.8125em; }
-        .prose-msg th, .prose-msg td { border: 1px solid oklch(var(--b3)); padding: 0.125rem 0.375rem; }
-        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-        #app { min-height: 300px; max-height: 500px; overflow-y: auto; }
+        :root { --primary: #4f46e5; --primary-light: rgba(79,70,229,0.1); --bg: #ffffff; --bg-alt: #f9fafb; --border: #e5e7eb; --text: #111827; --text-muted: #6b7280; --text-light: #9ca3af; --success: #059669; --warning: #d97706; --error: #dc2626; --info: #2563eb; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+        #app { min-height: 200px; max-height: 500px; display: flex; flex-direction: column; overflow: hidden; }
+        .header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 10; }
+        .header-title { font-size: 13px; font-weight: 700; }
+        .btn { display: inline-flex; align-items: center; padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; transition: background 0.15s; }
+        .btn:hover { background: var(--bg-alt); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { opacity: 0.9; }
+        .scroll-area { flex: 1; overflow-y: auto; }
+        .conv-item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+        .conv-item:hover { background: var(--bg-alt); }
+        .conv-header { display: flex; align-items: center; justify-content: space-between; }
+        .conv-from { font-size: 13px; font-weight: 600; }
+        .conv-time { font-size: 11px; color: var(--text-light); flex-shrink: 0; margin-left: 8px; }
+        .conv-subject { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .conv-preview { font-size: 12px; color: var(--text-light); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .msg-row { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        .msg-row:last-child { border-bottom: none; }
+        .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+        .msg-content { flex: 1; min-width: 0; }
+        .msg-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+        .msg-from { font-size: 13px; font-weight: 700; }
+        .msg-time { font-size: 11px; color: var(--text-light); }
+        .msg-body { font-size: 13px; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+        .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+        .badge-bot { background: var(--bg-alt); color: var(--text-light); }
+        .badge-received { background: rgba(37,99,235,0.1); color: var(--info); }
+        .badge-processing { background: rgba(217,119,6,0.1); color: var(--warning); }
+        .badge-completed { background: rgba(5,150,105,0.1); color: var(--success); }
+        .badge-failed { background: rgba(220,38,38,0.1); color: var(--error); }
+        .reply-bar { border-top: 1px solid var(--border); padding: 8px 12px; background: var(--bg); display: flex; gap: 8px; align-items: flex-end; }
+        .reply-bar textarea { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: inherit; resize: none; min-height: 36px; }
+        .empty { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-light); font-size: 13px; }
+        .loading { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-light); }
+        .form-group { margin-bottom: 12px; }
+        .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 4px; }
+        .form-input, .form-select, .form-textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: inherit; background: var(--bg); }
+        .form-textarea { resize: vertical; min-height: 80px; }
+        .truncated { font-size: 11px; color: var(--text-light); font-style: italic; }
     </style>
 </head>
-<body class="bg-base-100">
-<div id="app" class="flex flex-col">
-    <div id="loading" class="flex items-center justify-center h-64 text-base-content/30">
-        <span class="loading loading-spinner loading-md"></span>
-    </div>
+<body>
+<div id="app">
+    <div class="loading">Loading...</div>
 </div>
 
-<script type="module">
-import { App } from "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1.2.2/+esm";
+<script>
+// --- Minimal MCP Apps Client (inline, no SDK dependency) ---
+const MCPApp = {
+    _port: null,
+    _reqId: 1,
+    _pending: {},
+    ontoolresult: null,
+
+    connect() {
+        window.addEventListener("message", (e) => this._handleMessage(e));
+        // Send initialize
+        window.parent.postMessage({
+            jsonrpc: "2.0",
+            method: "ui/initialize",
+            params: { name: "AI Mailbox Inbox", version: "1.0.0" },
+            id: this._reqId++
+        }, "*");
+    },
+
+    _handleMessage(event) {
+        const msg = event.data;
+        if (!msg || typeof msg !== "object") return;
+
+        // Handle tool result notification
+        if (msg.method === "ui/toolResult" || msg.method === "notifications/ui/toolResult") {
+            if (this.ontoolresult) this.ontoolresult(msg.params);
+            return;
+        }
+
+        // Handle responses to our requests
+        if (msg.id && this._pending[msg.id]) {
+            const { resolve, reject } = this._pending[msg.id];
+            delete this._pending[msg.id];
+            if (msg.error) reject(new Error(msg.error.message || "RPC error"));
+            else resolve(msg.result);
+            return;
+        }
+
+        // Initialize response
+        if (msg.result && msg.id) {
+            // Initialize succeeded
+            return;
+        }
+    },
+
+    async callServerTool(params) {
+        const id = this._reqId++;
+        return new Promise((resolve, reject) => {
+            this._pending[id] = { resolve, reject };
+            window.parent.postMessage({
+                jsonrpc: "2.0",
+                method: "tools/call",
+                params: typeof params === "string" ? { name: params, arguments: {} } : params,
+                id
+            }, "*");
+            setTimeout(() => {
+                if (this._pending[id]) {
+                    delete this._pending[id];
+                    reject(new Error("Tool call timeout"));
+                }
+            }, 30000);
+        });
+    }
+};
 
 // --- State ---
 const state = {
-    view: "inbox",        // inbox | thread | compose
+    view: "inbox",
     user: null,
     conversations: [],
     currentThread: null,
@@ -42,17 +133,18 @@ const state = {
 
 const appEl = document.getElementById("app");
 
-// --- MCP Apps client ---
-const app = new App({ name: "AI Mailbox Inbox", version: "1.0.0" });
-
-app.ontoolresult = (result) => {
-    // Initial tool result from mailbox_list_messages
+// --- MCP Apps lifecycle ---
+MCPApp.ontoolresult = (result) => {
     try {
-        const data = result.structuredContent || result.content?.find(c => c.type === "text");
-        if (data) {
-            const parsed = typeof data === "string" ? JSON.parse(data) : (data.text ? JSON.parse(data.text) : data);
-            state.conversations = parsed.messages || [];
-            state.hasMore = parsed.has_more || false;
+        let data = result.structuredContent || result.content;
+        if (Array.isArray(data)) {
+            const textItem = data.find(c => c.type === "text");
+            if (textItem) data = JSON.parse(textItem.text);
+        }
+        if (typeof data === "string") data = JSON.parse(data);
+        if (data && data.messages) {
+            state.conversations = data.messages;
+            state.hasMore = data.has_more || false;
         }
     } catch (e) {
         console.error("Failed to parse tool result:", e);
@@ -60,353 +152,219 @@ app.ontoolresult = (result) => {
     state.loading = false;
     render();
     startPolling();
-    // Fetch identity
     loadIdentity();
 };
 
-app.connect();
+MCPApp.connect();
 
 // --- API helpers ---
-async function callTool(name, args = {}) {
+async function callTool(name, args) {
     try {
-        return await app.callServerTool({ name, arguments: args });
+        const result = await MCPApp.callServerTool({ name, arguments: args || {} });
+        return result;
     } catch (e) {
-        console.error(`callServerTool(${name}) failed:`, e);
-        state.error = e.message || "Tool call failed";
-        render();
+        console.error("callServerTool(" + name + ") failed:", e);
         return null;
     }
 }
 
 function parseResult(result) {
     if (!result) return null;
-    const text = result.content?.find(c => c.type === "text")?.text;
-    if (text) {
-        try { return JSON.parse(text); } catch { return text; }
+    if (result.structuredContent) return result.structuredContent;
+    const content = result.content;
+    if (Array.isArray(content)) {
+        const t = content.find(c => c.type === "text");
+        if (t) try { return JSON.parse(t.text); } catch {}
     }
-    return result.structuredContent || null;
+    return result;
 }
 
 async function loadIdentity() {
-    const result = await callTool("mailbox_whoami");
-    const data = parseResult(result);
-    if (data && data.user_id) {
-        state.user = data;
-        render();
-    }
+    const r = await callTool("mailbox_whoami");
+    const d = parseResult(r);
+    if (d && d.user_id) { state.user = d; render(); }
 }
 
 async function loadInbox() {
-    const result = await callTool("mailbox_list_messages", {
-        unread_only: false, limit: 50,
-    });
-    const data = parseResult(result);
-    if (data && data.messages) {
-        state.conversations = data.messages;
-        state.hasMore = data.has_more || false;
-        render();
-    }
+    const r = await callTool("mailbox_list_messages", { unread_only: false, limit: 50 });
+    const d = parseResult(r);
+    if (d && d.messages) { state.conversations = d.messages; state.hasMore = d.has_more || false; render(); }
 }
 
 async function loadThread(messageId, convId) {
-    state.loading = true;
-    state.view = "thread";
-    state.currentConvId = convId;
-    render();
-
-    const result = await callTool("mailbox_get_thread", {
-        message_id: messageId, limit: 50, after_sequence: 0,
-    });
-    const data = parseResult(result);
-    if (data) {
-        state.currentThread = data;
-        // Mark as read
-        if (convId) {
-            await callTool("mailbox_mark_read", { conversation_id: convId });
-        }
-    }
-    state.loading = false;
-    render();
+    state.loading = true; state.view = "thread"; state.currentConvId = convId; render();
+    const r = await callTool("mailbox_get_thread", { message_id: messageId, limit: 50, after_sequence: 0 });
+    const d = parseResult(r);
+    if (d) { state.currentThread = d; if (convId) await callTool("mailbox_mark_read", { conversation_id: convId }); }
+    state.loading = false; render();
 }
 
 async function sendReply(convId, messageId, body) {
     if (!body.trim()) return;
-    const result = await callTool("mailbox_reply_to_message", {
-        message_id: messageId, body: body,
-    });
-    const data = parseResult(result);
-    if (data && data.message_id) {
-        // Reload thread
-        await loadThread(messageId, convId);
-    }
+    await callTool("mailbox_reply_to_message", { message_id: messageId, body: body });
+    await loadThread(messageId, convId);
 }
 
 async function sendNewMessage(to, body, project, subject) {
     if (!body.trim() || !to) return;
-    const result = await callTool("mailbox_send_message", {
-        to: to, body: body, project: project || "general",
-        subject: subject || "",
-    });
-    const data = parseResult(result);
-    if (data && !data.error) {
-        state.view = "inbox";
-        await loadInbox();
-    }
+    await callTool("mailbox_send_message", { to: to, body: body, project: project || "general", subject: subject || "" });
+    state.view = "inbox"; await loadInbox();
 }
 
 async function loadUsers() {
-    const result = await callTool("mailbox_list_users");
-    const data = parseResult(result);
-    if (data && data.users) {
-        state.users = data.users;
-    }
+    const r = await callTool("mailbox_list_users");
+    const d = parseResult(r);
+    if (d && d.users) state.users = d.users;
 }
 
 // --- Polling ---
-let pollTimer = null;
+var pollTimer = null;
 function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-        if (state.view === "inbox") {
-            await loadInbox();
-        }
-    }, 15000);
+    pollTimer = setInterval(function() { if (state.view === "inbox") loadInbox(); }, 15000);
 }
 
 // --- Relative time ---
-function relativeTime(isoStr) {
-    if (!isoStr) return "";
-    const now = new Date();
-    const then = new Date(isoStr);
-    const diffMs = now - then;
-    const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 60) return "just now";
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 7) return `${diffDay}d ago`;
-    return then.toLocaleDateString();
+function relativeTime(iso) {
+    if (!iso) return "";
+    var diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+    if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+    return new Date(iso).toLocaleDateString();
 }
 
-// --- Escape HTML ---
-function esc(str) {
-    if (!str) return "";
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
+function esc(s) { return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 // --- Render ---
 function render() {
     if (state.loading && state.view !== "thread") {
-        appEl.innerHTML = `<div class="flex items-center justify-center h-64 text-base-content/30">
-            <span class="loading loading-spinner loading-md"></span>
-        </div>`;
+        appEl.innerHTML = '<div class="loading">Loading...</div>';
         return;
     }
-
     if (state.view === "inbox") renderInbox();
     else if (state.view === "thread") renderThread();
     else if (state.view === "compose") renderCompose();
 }
 
 function renderInbox() {
-    const header = `
-        <div class="flex items-center justify-between px-3 py-2 border-b border-base-200 bg-base-100 sticky top-0 z-10">
-            <div class="text-sm font-bold text-base-content">
-                Inbox${state.user ? ` — ${esc(state.user.display_name)}` : ""}
-            </div>
-            <button onclick="window.__compose()" class="btn btn-primary btn-xs">Compose</button>
-        </div>`;
+    var header = '<div class="header"><div class="header-title">Inbox' +
+        (state.user ? ' &mdash; ' + esc(state.user.display_name) : '') +
+        '</div><button class="btn btn-primary" onclick="window.__compose()">Compose</button></div>';
 
     if (!state.conversations.length) {
-        appEl.innerHTML = header + `
-            <div class="flex items-center justify-center h-48 text-base-content/30">
-                <div class="text-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-2 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>
-                    </svg>
-                    <p class="text-xs">No messages yet</p>
-                </div>
-            </div>`;
+        appEl.innerHTML = header + '<div class="empty">No messages yet</div>';
         return;
     }
 
-    // Group messages by conversation_id
-    const convMap = new Map();
-    for (const msg of state.conversations) {
-        const cid = msg.conversation_id;
-        if (!convMap.has(cid)) {
-            convMap.set(cid, { messages: [], latest: msg, convId: cid });
-        }
-        convMap.get(cid).messages.push(msg);
-        if (msg.created_at > convMap.get(cid).latest.created_at) {
-            convMap.get(cid).latest = msg;
-        }
-    }
+    var convMap = {};
+    var convOrder = [];
+    state.conversations.forEach(function(msg) {
+        var cid = msg.conversation_id;
+        if (!convMap[cid]) { convMap[cid] = { messages: [], latest: msg }; convOrder.push(cid); }
+        convMap[cid].messages.push(msg);
+        if (msg.created_at > convMap[cid].latest.created_at) convMap[cid].latest = msg;
+    });
 
-    let convHtml = "";
-    for (const [cid, conv] of convMap) {
-        const msg = conv.latest;
-        const from = esc(msg.from_user || "");
-        const body = esc((msg.body || "").slice(0, 80));
-        const time = relativeTime(msg.created_at);
-        const unread = conv.messages.length;
-        const firstMsgId = conv.messages[0]?.id || msg.id;
+    var html = '';
+    convOrder.forEach(function(cid) {
+        var conv = convMap[cid];
+        var msg = conv.latest;
+        var firstId = conv.messages[0].id || msg.id;
+        html += '<div class="conv-item" onclick="window.__openThread(\'' + esc(firstId) + "','" + esc(cid) + "')\">" +
+            '<div class="conv-header"><span class="conv-from">' + esc(msg.from_user) + '</span>' +
+            '<span class="conv-time">' + relativeTime(msg.created_at) + '</span></div>' +
+            (msg.subject ? '<div class="conv-subject">' + esc(msg.subject) + '</div>' : '') +
+            '<div class="conv-preview">' + esc((msg.body || "").slice(0, 80)) + '</div></div>';
+    });
 
-        convHtml += `
-        <div class="px-2.5 py-2 hover:bg-base-200/50 cursor-pointer border-b border-base-200 transition-colors"
-             onclick="window.__openThread('${esc(firstMsgId)}', '${esc(cid)}')">
-            <div class="flex items-center justify-between">
-                <div class="text-sm font-medium text-base-content truncate flex-1">${from}</div>
-                <span class="text-xs text-base-content/30 ml-2 shrink-0">${time}</span>
-            </div>
-            ${msg.subject ? `<div class="text-xs font-medium text-base-content/60 truncate mt-0.5">${esc(msg.subject)}</div>` : ""}
-            <div class="text-xs text-base-content/40 truncate mt-0.5">${body}</div>
-        </div>`;
-    }
-
-    appEl.innerHTML = header + `<div class="flex-1 overflow-y-auto">${convHtml}</div>`;
+    appEl.innerHTML = header + '<div class="scroll-area">' + html + '</div>';
 }
 
 function renderThread() {
-    const thread = state.currentThread;
-    const backBtn = `
-        <div class="flex items-center gap-2 px-3 py-2 border-b border-base-200 bg-base-100 sticky top-0 z-10">
-            <button onclick="window.__backToInbox()" class="btn btn-ghost btn-xs">&larr; Back</button>
-            <div class="text-sm font-bold text-base-content truncate">
-                ${thread?.conversation?.project ? esc(thread.conversation.project) : "Thread"}
-            </div>
-        </div>`;
+    var thread = state.currentThread;
+    var back = '<div class="header"><button class="btn" onclick="window.__backToInbox()">&larr; Back</button>' +
+        '<div class="header-title" style="margin-left:8px">' +
+        (thread && thread.conversation && thread.conversation.project ? esc(thread.conversation.project) : 'Thread') +
+        '</div><div style="flex:1"></div></div>';
 
     if (state.loading || !thread) {
-        appEl.innerHTML = backBtn + `
-            <div class="flex items-center justify-center h-48 text-base-content/30">
-                <span class="loading loading-spinner loading-md"></span>
-            </div>`;
+        appEl.innerHTML = back + '<div class="loading">Loading thread...</div>';
         return;
     }
 
-    let msgsHtml = "";
-    const messages = thread.messages || [];
-    const lastMsgId = messages.length ? messages[messages.length - 1].id : null;
+    var msgs = thread.messages || [];
+    var lastMsgId = msgs.length ? msgs[msgs.length - 1].id : null;
+    var html = '';
 
-    for (const msg of messages) {
-        const initials = esc((msg.from_user || "??").slice(0, 2).toUpperCase());
-        const from = esc(msg.from_user || "");
-        const time = relativeTime(msg.created_at);
-        const body = esc(msg.body || "");
-        const isAi = msg.user_type === "agent";
-        const ackBadge = renderAckBadge(msg.ack_state);
+    msgs.forEach(function(msg) {
+        var initials = esc((msg.from_user || "??").slice(0, 2).toUpperCase());
+        var ackBadge = '';
+        if (msg.ack_state && msg.ack_state !== "pending") {
+            var cls = "badge badge-" + msg.ack_state;
+            ackBadge = '<span class="' + cls + '">' + esc(msg.ack_state) + '</span>';
+        }
+        html += '<div class="msg-row"><div class="avatar">' + initials + '</div><div class="msg-content">' +
+            '<div class="msg-meta"><span class="msg-from">' + esc(msg.from_user) + '</span>' +
+            '<span class="msg-time">' + relativeTime(msg.created_at) + '</span>' + ackBadge + '</div>' +
+            '<div class="msg-body">' + esc(msg.body) + '</div>' +
+            (msg.truncated ? '<span class="truncated">(truncated &mdash; ' + msg.full_length + ' chars)</span>' : '') +
+            '</div></div>';
+    });
 
-        msgsHtml += `
-        <div class="flex gap-3 py-3 px-3 border-b border-base-200 last:border-b-0">
-            <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0 mt-0.5">${initials}</div>
-            <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 mb-0.5">
-                    <span class="text-sm font-bold text-base-content">${from}</span>
-                    ${isAi ? '<span class="text-xs text-base-content/40 bg-base-200 px-1.5 py-0.5 rounded">Bot</span>' : ""}
-                    <span class="text-xs text-base-content/30">${time}</span>
-                    ${ackBadge}
-                </div>
-                <div class="prose-msg text-sm text-base-content/80">${body}</div>
-                ${msg.truncated ? `<span class="text-xs text-base-content/30 italic">(truncated — ${msg.full_length} chars)</span>` : ""}
-            </div>
-        </div>`;
-    }
+    var replyBar = '<div class="reply-bar"><textarea id="reply-body" rows="2" placeholder="Reply..."></textarea>' +
+        '<button class="btn btn-primary" onclick="window.__sendReply()">Reply</button></div>';
 
-    // Reply form
-    const replyForm = `
-        <div class="border-t border-base-200 px-3 py-2.5 bg-base-100 sticky bottom-0">
-            <div class="flex gap-2 items-end">
-                <textarea id="reply-body" rows="2" placeholder="Reply..."
-                    class="textarea textarea-bordered flex-1 text-sm border-base-300 rounded"></textarea>
-                <button onclick="window.__sendReply()" class="btn btn-neutral btn-sm h-9">Reply</button>
-            </div>
-        </div>`;
-
-    appEl.innerHTML = backBtn + `<div class="flex-1 overflow-y-auto">${msgsHtml}</div>` + replyForm;
-
-    // Scroll to bottom
-    const scrollArea = appEl.querySelector(".overflow-y-auto");
-    if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
-}
-
-function renderAckBadge(ackState) {
-    if (!ackState || ackState === "pending") return "";
-    const colors = {
-        received: "bg-info/10 text-info",
-        processing: "bg-warning/10 text-warning",
-        completed: "bg-success/10 text-success",
-        failed: "bg-error/10 text-error",
-    };
-    const cls = colors[ackState] || "bg-base-200 text-base-content/40";
-    return `<span class="text-xs px-1.5 py-0.5 rounded ${cls}">${esc(ackState)}</span>`;
+    appEl.innerHTML = back + '<div class="scroll-area">' + html + '</div>' + replyBar;
+    var sa = appEl.querySelector(".scroll-area");
+    if (sa) sa.scrollTop = sa.scrollHeight;
 }
 
 function renderCompose() {
-    const header = `
-        <div class="flex items-center gap-2 px-3 py-2 border-b border-base-200 bg-base-100 sticky top-0 z-10">
-            <button onclick="window.__backToInbox()" class="btn btn-ghost btn-xs">&larr; Back</button>
-            <div class="text-sm font-bold text-base-content">Compose</div>
-        </div>`;
+    var back = '<div class="header"><button class="btn" onclick="window.__backToInbox()">&larr; Back</button>' +
+        '<div class="header-title" style="margin-left:8px">Compose</div><div style="flex:1"></div></div>';
 
-    const userOptions = state.users.map(u =>
-        `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.id)})</option>`
-    ).join("");
+    var opts = state.users.map(function(u) {
+        return '<option value="' + esc(u.id) + '">' + esc(u.display_name) + ' (' + esc(u.id) + ')</option>';
+    }).join("");
 
-    appEl.innerHTML = header + `
-        <div class="p-3 space-y-3">
-            <div class="form-control">
-                <label class="label"><span class="label-text text-xs">To</span></label>
-                <select id="compose-to" class="select select-bordered select-sm w-full">
-                    <option value="">Select recipient...</option>
-                    ${userOptions}
-                </select>
-            </div>
-            <div class="form-control">
-                <label class="label"><span class="label-text text-xs">Project</span></label>
-                <input id="compose-project" type="text" value="general" class="input input-bordered input-sm w-full">
-            </div>
-            <div class="form-control">
-                <label class="label"><span class="label-text text-xs">Subject (optional)</span></label>
-                <input id="compose-subject" type="text" class="input input-bordered input-sm w-full">
-            </div>
-            <div class="form-control">
-                <label class="label"><span class="label-text text-xs">Message</span></label>
-                <textarea id="compose-body" rows="4" class="textarea textarea-bordered w-full text-sm" maxlength="10000"></textarea>
-            </div>
-            <button onclick="window.__sendCompose()" class="btn btn-primary btn-sm">Send Message</button>
-        </div>`;
+    appEl.innerHTML = back + '<div class="scroll-area" style="padding:12px">' +
+        '<div class="form-group"><label class="form-label">To</label>' +
+        '<select id="compose-to" class="form-select"><option value="">Select recipient...</option>' + opts + '</select></div>' +
+        '<div class="form-group"><label class="form-label">Project</label>' +
+        '<input id="compose-project" class="form-input" value="general"></div>' +
+        '<div class="form-group"><label class="form-label">Subject (optional)</label>' +
+        '<input id="compose-subject" class="form-input"></div>' +
+        '<div class="form-group"><label class="form-label">Message</label>' +
+        '<textarea id="compose-body" class="form-textarea" rows="4" maxlength="10000"></textarea></div>' +
+        '<button class="btn btn-primary" onclick="window.__sendCompose()">Send Message</button></div>';
 }
 
-// --- Global event handlers (accessible from onclick) ---
-window.__openThread = (messageId, convId) => loadThread(messageId, convId);
-window.__backToInbox = () => { state.view = "inbox"; loadInbox(); };
-window.__compose = async () => { state.view = "compose"; await loadUsers(); render(); };
-
-window.__sendReply = async () => {
-    const el = document.getElementById("reply-body");
+// --- Global handlers ---
+window.__openThread = function(mid, cid) { loadThread(mid, cid); };
+window.__backToInbox = function() { state.view = "inbox"; loadInbox(); };
+window.__compose = async function() { state.view = "compose"; await loadUsers(); render(); };
+window.__sendReply = async function() {
+    var el = document.getElementById("reply-body");
     if (!el || !el.value.trim()) return;
-    const thread = state.currentThread;
-    if (!thread || !thread.messages?.length) return;
-    const lastMsg = thread.messages[thread.messages.length - 1];
+    var thread = state.currentThread;
+    if (!thread || !thread.messages || !thread.messages.length) return;
+    var lastMsg = thread.messages[thread.messages.length - 1];
     el.disabled = true;
     await sendReply(state.currentConvId, lastMsg.id, el.value);
-    el.disabled = false;
-    el.value = "";
+    el.disabled = false; el.value = "";
 };
-
-window.__sendCompose = async () => {
-    const to = document.getElementById("compose-to")?.value;
-    const body = document.getElementById("compose-body")?.value;
-    const project = document.getElementById("compose-project")?.value;
-    const subject = document.getElementById("compose-subject")?.value;
-    if (!to || !body?.trim()) return;
+window.__sendCompose = async function() {
+    var to = document.getElementById("compose-to").value;
+    var body = document.getElementById("compose-body").value;
+    var project = document.getElementById("compose-project").value;
+    var subject = document.getElementById("compose-subject").value;
+    if (!to || !body.trim()) return;
     await sendNewMessage(to, body, project, subject);
 };
 
-// --- Mock mode for offline testing ---
+// --- Mock mode ---
 if (new URLSearchParams(window.location.search).get("mock") === "true") {
     state.user = { user_id: "keith", display_name: "Keith" };
     state.conversations = [
