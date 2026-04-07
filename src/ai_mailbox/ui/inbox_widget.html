@@ -74,6 +74,9 @@ const MCPApp = {
         const msg = event.data;
         if (!msg || typeof msg !== "object") return;
 
+        // Debug: log all incoming messages to help diagnose handshake
+        console.log("[MCP Widget] Received:", JSON.stringify(msg).substring(0, 500));
+
         // Host sends ui/initialize — respond with success
         if (msg.method === "ui/initialize") {
             this._initialized = true;
