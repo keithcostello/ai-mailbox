@@ -287,7 +287,7 @@ class TestHealthPage:
 
     def test_health_page_shows_version(self, client):
         resp = client.get("/web/health")
-        assert "0.6.0" in resp.text
+        assert "0.7.0" in resp.text
 
     def test_health_page_shows_user_count(self, client):
         resp = client.get("/web/health")

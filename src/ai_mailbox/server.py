@@ -415,7 +415,7 @@ def create_app() -> object:
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
-            "version": "0.6.0",
+            "version": "0.7.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         })
