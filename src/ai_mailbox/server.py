@@ -177,6 +177,12 @@ def create_app() -> object:
         name="Inbox Widget",
         description="Interactive inbox for AI Mailbox",
         mime_type="text/html;profile=mcp-app",
+        meta={"ui": {
+            "csp": {
+                "resourceDomains": ["cdn.jsdelivr.net", "cdn.tailwindcss.com"],
+                "connectDomains": ["cdn.jsdelivr.net"],
+            },
+        }},
     )
     def inbox_widget_resource() -> str:
         html_path = Path(__file__).parent / "ui" / "inbox_widget.html"
@@ -216,10 +222,10 @@ def create_app() -> object:
             group_send_token=group_send_token,
         )
 
-    @mcp.tool(meta={"ui": {
-        "resourceUri": INBOX_WIDGET_URI,
-        "csp": {"resourceDomains": ["cdn.jsdelivr.net", "cdn.tailwindcss.com"]},
-    }})
+    @mcp.tool(meta={
+        "ui": {"resourceUri": INBOX_WIDGET_URI},
+        "ui/resourceUri": INBOX_WIDGET_URI,  # Legacy key for older hosts
+    })
     def mailbox_list_messages(
         project: str = "",
         unread_only: bool = True,
