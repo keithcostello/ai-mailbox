@@ -55,45 +55,50 @@
 
 <script>
 // --- Minimal MCP Apps Client (inline, no SDK dependency) ---
+// Protocol: Host sends ui/initialize to view, then ui/toolResult.
+// View listens and can send tools/call requests back.
 const MCPApp = {
-    _port: null,
     _reqId: 1,
     _pending: {},
+    _initialized: false,
     ontoolresult: null,
 
     connect() {
         window.addEventListener("message", (e) => this._handleMessage(e));
-        // Send initialize
-        window.parent.postMessage({
-            jsonrpc: "2.0",
-            method: "ui/initialize",
-            params: { name: "AI Mailbox Inbox", version: "1.0.0" },
-            id: this._reqId++
-        }, "*");
+        // View does NOT send ui/initialize — host sends it to us.
+        // Signal readiness by posting a simple ready message
+        window.parent.postMessage({ jsonrpc: "2.0", method: "ready" }, "*");
     },
 
     _handleMessage(event) {
         const msg = event.data;
         if (!msg || typeof msg !== "object") return;
 
-        // Handle tool result notification
+        // Host sends ui/initialize — respond with success
+        if (msg.method === "ui/initialize") {
+            this._initialized = true;
+            if (msg.id) {
+                window.parent.postMessage({
+                    jsonrpc: "2.0",
+                    id: msg.id,
+                    result: { name: "AI Mailbox Inbox", version: "1.0.0" }
+                }, "*");
+            }
+            return;
+        }
+
+        // Host sends tool result
         if (msg.method === "ui/toolResult" || msg.method === "notifications/ui/toolResult") {
             if (this.ontoolresult) this.ontoolresult(msg.params);
             return;
         }
 
-        // Handle responses to our requests
-        if (msg.id && this._pending[msg.id]) {
+        // Handle responses to our tool call requests
+        if (msg.id !== undefined && this._pending[msg.id]) {
             const { resolve, reject } = this._pending[msg.id];
             delete this._pending[msg.id];
             if (msg.error) reject(new Error(msg.error.message || "RPC error"));
             else resolve(msg.result);
-            return;
-        }
-
-        // Initialize response
-        if (msg.result && msg.id) {
-            // Initialize succeeded
             return;
         }
     },
