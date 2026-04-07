@@ -6,6 +6,7 @@ endpoints, and returns a Starlette ASGI app for deployment.
 
 import logging
 import sqlite3
+from pathlib import Path
 from urllib.parse import urlencode, parse_qs
 
 from mcp.server.fastmcp import FastMCP
@@ -163,6 +164,19 @@ def create_app() -> object:
         mcp.settings.transport_security.allowed_origins.append("https://*.up.railway.app")
         mcp.settings.transport_security.allowed_origins.append("https://*.up.railway.app:*")
 
+    # --- MCP Apps: Inbox Widget Resource ---
+    INBOX_WIDGET_URI = "ui://ai-mailbox/inbox.html"
+
+    @mcp.resource(
+        INBOX_WIDGET_URI,
+        name="Inbox Widget",
+        description="Interactive inbox for AI Mailbox",
+        mime_type="text/html;profile=mcp-app",
+    )
+    def inbox_widget_resource() -> str:
+        html_path = Path(__file__).parent / "ui" / "inbox_widget.html"
+        return html_path.read_text(encoding="utf-8")
+
     # --- MCP Tools (user identity from OAuth token via contextvars) ---
 
     def _get_user() -> str:
@@ -197,7 +211,10 @@ def create_app() -> object:
             group_send_token=group_send_token,
         )
 
-    @mcp.tool()
+    @mcp.tool(meta={"ui": {
+        "resourceUri": INBOX_WIDGET_URI,
+        "csp": {"resourceDomains": ["cdn.jsdelivr.net", "cdn.tailwindcss.com"]},
+    }})
     def mailbox_list_messages(
         project: str = "",
         unread_only: bool = True,
