@@ -71,38 +71,57 @@ const MCPApp = {
 
     connect() {
         window.addEventListener("message", (e) => this._handleMessage(e));
-        // View does NOT send ui/initialize — host sends it to us.
-        // Signal readiness by posting a simple ready message
-        window.parent.postMessage({ jsonrpc: "2.0", method: "ready" }, "*");
+        // View sends ui/initialize TO the host (per MCP Apps spec)
+        var initId = this._reqId++;
+        this._pending[initId] = {
+            resolve: (result) => {
+                this._initialized = true;
+                console.log("[MCP Widget] Initialized, sending notifications/initialized");
+                // Send initialized notification
+                window.parent.postMessage({
+                    jsonrpc: "2.0",
+                    method: "ui/notifications/initialized"
+                }, "*");
+            },
+            reject: (err) => console.error("[MCP Widget] Init failed:", err)
+        };
+        window.parent.postMessage({
+            jsonrpc: "2.0",
+            method: "ui/initialize",
+            id: initId,
+            params: {
+                protocolVersion: "2026-01-26",
+                appInfo: { name: "AI Mailbox Inbox", version: "1.0.0" },
+                appCapabilities: {}
+            }
+        }, "*");
     },
 
     _handleMessage(event) {
         const msg = event.data;
         if (!msg || typeof msg !== "object") return;
 
-        // Debug: log all incoming messages to help diagnose handshake
+        // Debug: log all incoming messages
         console.log("[MCP Widget] Received:", JSON.stringify(msg).substring(0, 500));
 
-        // Host sends ui/initialize — respond with success
-        if (msg.method === "ui/initialize") {
-            this._initialized = true;
-            if (msg.id) {
-                window.parent.postMessage({
-                    jsonrpc: "2.0",
-                    id: msg.id,
-                    result: { name: "AI Mailbox Inbox", version: "1.0.0" }
-                }, "*");
-            }
-            return;
-        }
-
-        // Host sends tool result
-        if (msg.method === "ui/toolResult" || msg.method === "notifications/ui/toolResult") {
+        // Host sends tool result notification
+        if (msg.method === "ui/notifications/tool-result" || msg.method === "ui/toolResult" || msg.method === "notifications/ui/toolResult") {
             if (this.ontoolresult) this.ontoolresult(msg.params);
             return;
         }
 
-        // Handle responses to our tool call requests
+        // Host sends tool input notification
+        if (msg.method === "ui/notifications/tool-input") {
+            // Could use this for streaming args
+            return;
+        }
+
+        // Host context changed
+        if (msg.method === "ui/notifications/host-context-changed") {
+            return;
+        }
+
+        // Handle responses to our requests (initialize, tool calls)
         if (msg.id !== undefined && this._pending[msg.id]) {
             const { resolve, reject } = this._pending[msg.id];
             delete this._pending[msg.id];
