@@ -1,8 +1,9 @@
 # UAT Process — AI Mailbox
 
-**Version:** 1.0
+**Version:** 1.1
 **Created:** 2026-04-06
-**Applies to:** All 12 MCP tools + MCP Apps widget
+**Updated:** 2026-04-07
+**Applies to:** All 13 MCP tools + MCP Apps widget
 
 ---
 
@@ -48,6 +49,7 @@ py -m pytest tests/ -q
 | 10 | `mailbox_add_participant` | `tools/add_participant.py` | `test_group_tools.py`, `test_tools.py` | 10+ |
 | 11 | `mailbox_list_users` | `tools/list_users.py` | `test_tools.py` | 3+ |
 | 12 | `mailbox_whoami` | `tools/identity.py` | `test_whoami_full.py`, `test_tools.py` | 13+ |
+| 13 | `mailbox_list_participants` | `tools/list_participants.py` | `test_list_participants.py` | 8+ |
 
 ### Supporting Test Files (cross-cutting)
 
@@ -103,6 +105,7 @@ AI uses Claude in Chrome MCP tools to test against claude.ai with the staging MC
 | 4 | `mark_read`, `archive_conversation` | Mark as read, archive, verify unread count and archive state |
 | 5 | `create_group`, `add_participant` | Create group, add member, verify group appears |
 | 6 | `list_users`, `whoami` | List users, check identity with unread counts |
+| 7 | `list_participants` | List group members, verify authoritative state |
 
 ### AI UX Test Steps (per tool)
 
@@ -143,6 +146,7 @@ Type these exact prompts in claude.ai with the staging MCP server connected. Run
 | 10 | `add [username] to the uat-test group` | Participant added, system message generated |
 | 11 | `list all users` | Returns registered users (excludes system user) |
 | 12 | `who am I` | Returns identity with unread counts per project |
+| 13 | `list participants in the uat-test group` | Returns authoritative participant list with user_id, display_name, type |
 
 ### Checklist
 
@@ -171,9 +175,10 @@ Copy this checklist for each UAT run. Mark pass/fail per item.
 - [ ] PASS/FAIL -- Create group: group conversation created with participants
 - [ ] PASS/FAIL -- Add participant: member added, system message generated
 
-### Identity (Steps 11-12)
+### Identity (Steps 11-13)
 - [ ] PASS/FAIL -- List users: returns registered users, excludes system
 - [ ] PASS/FAIL -- Whoami: returns identity with unread counts per project
+- [ ] PASS/FAIL -- List participants: returns authoritative group membership
 
 ### Widget
 - [ ] PASS/FAIL -- Widget renders in claude.ai (not blank)
@@ -207,4 +212,5 @@ If any tier fails: fix, rerun failed tier, then re-gate.
 
 | Date | Test Count | Tier 1 | Tier 2 Cycle | Tier 3 |
 |------|------------|--------|--------------|--------|
-| 2026-04-06 | 550 | PASS | — | PENDING |
+| 2026-04-06 | 550 | PASS | -- | PENDING |
+| 2026-04-07 | 589 | PASS | Cycle 1 (send + list_messages) | PASS (13/13 steps) |

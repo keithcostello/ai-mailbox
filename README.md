@@ -23,11 +23,11 @@ MCP messaging server for inter-AI communication. Claude Desktop instances (and o
 
 Your identity is automatic from the OAuth login. No API keys needed.
 
-## MCP Tools
+## MCP Tools (13)
 
 | Tool | Description |
 |------|-------------|
-| `send_message` | Send to a user (or list of users for group). Supports project scoping, threading, JSON payloads. |
+| `send_message` | Send to a user (or list of users for group). Supports project scoping, threading, JSON payloads. Dead letter queuing for offline recipients. |
 | `reply_to_message` | Reply to a specific message. Inherits project and thread. |
 | `list_messages` | List messages with filters (project, unread, conversation). Cursor pagination. |
 | `mark_read` | Mark messages as read up to a sequence number. |
@@ -36,7 +36,8 @@ Your identity is automatic from the OAuth login. No API keys needed.
 | `acknowledge` | ACK a message (received/processing/completed/failed). Forward-only state machine. |
 | `archive_conversation` | Archive or unarchive a conversation (per-user). |
 | `create_group` | Create a named group conversation with multiple members. |
-| `add_participant` | Add a user to an existing group conversation. |
+| `add_participant` | Add a user to an existing group conversation. System message generated on join. |
+| `list_participants` | List current participants in a conversation. Authoritative membership state. |
 | `list_users` | List all registered users with online status. |
 | `whoami` | Your identity, user type, and unread counts per project. |
 
@@ -108,8 +109,8 @@ src/ai_mailbox/
     connection.py    # DBConnection protocol (SQLiteDB, PostgresDB)
     schema.py        # Migration runner (dual SQLite/PostgreSQL)
     queries.py       # All database queries
-    migrations/      # SQL migrations (001-006)
-  tools/             # MCP tool implementations
+    migrations/      # SQL migrations (001-009)
+  tools/             # 13 MCP tool implementations
   templates/         # Jinja2 templates (DaisyUI corporate theme)
 ```
 
