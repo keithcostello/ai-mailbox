@@ -11,6 +11,7 @@ from urllib.parse import urlencode, parse_qs
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from mcp.types import CallToolResult, TextContent
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse as StarletteJSONResponse, HTMLResponse, RedirectResponse
 from starlette.routing import Route
@@ -232,15 +233,20 @@ def create_app() -> object:
         conversation_id: str | None = None,
         limit: int = 20,
         after_sequence: int = 0,
-    ) -> dict:
+    ) -> CallToolResult:
         """List AI Mailbox messages without marking as read. Bodies truncated to 200 chars -- use mailbox_get_thread for full content. Pagination via after_sequence."""
+        import json
         uid = _get_user()
         logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
-        return tool_list_messages(
+        result = tool_list_messages(
             db, user_id=uid,
             project=project or None, unread_only=unread_only,
             conversation_id=conversation_id,
             limit=limit, after_sequence=after_sequence,
+        )
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(result))],
+            structuredContent=result,
         )
 
     @mcp.tool()
