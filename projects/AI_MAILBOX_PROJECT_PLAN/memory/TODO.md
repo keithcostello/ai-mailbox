@@ -1,47 +1,72 @@
 ## Carry Over (Tech Debt)
 
-- Add GitHub OAuth to MCP login page (Claude Desktop can't use GitHub to auth) [SPRINT-7, deferred]
+- Add GitHub OAuth to MCP login page (deferred) [SPRINT-7]
 - Investigate Railway auto-deploy from branch push [TD-002]
 - Resolve production dual-Postgres question (both at 0MB) [TD-003]
 - Tailwind CDN in production -- add build step [TD-005]
 - Update Amy's MCP connector URL to production [TD-007]
 
-## Sprint 7 — MCP Apps Inbox Widget (IN PROGRESS)
+## Sprint 7 -- MCP Apps Inbox Widget (DONE)
 
-**Decision**: Replaced outbound webhooks with MCP Apps interactive UI. Webhooks are server-to-server; our users are in Claude Desktop, claude.ai, ChatGPT. MCP Apps renders HTML iframes inside chat windows.
+**Decision**: Replaced outbound webhooks with MCP Apps interactive UI.
 
-**Implementation phases:**
-1. Server-side: register `ui://ai-mailbox/inbox.html` resource + attach to `mailbox_list_messages` tool via `meta` — TDD
-2. Widget HTML: conversation list, thread view, compose form — vanilla JS + DaisyUI 4 + callServerTool
-3. Unit tests: resource registration, HTML content assertions, tool metadata
-4. AI UX UAT: Claude Code preview tools verify widget renders and functions in browser
-5. Human UAT: Keith tests on Claude Desktop connected to staging
-6. Browser testing: basic-host harness + direct HTML testing with mock data
+**Proven working in claude.ai:**
+- Inbox view with conversations, timestamps, Compose button
+- Click-to-thread via callServerTool through AppBridge proxy
+- Thread view with avatars, message bubbles, reply form, project header
+- Back navigation, error display
+- Fully inline CSS/JS (no CDN -- Claude CSP blocks external resources)
+- Correct MCP Apps handshake: protocolVersion 2026-01-26, appInfo, appCapabilities
 
-**Detailed plan:** `C:\Users\keith\.claude\plans\drifting-waddling-nest.md`
+## Sprint 7 -- UAT Process (DONE)
 
-## Sprint 7 — Remaining Features (after widget)
+Three-tier UAT process documented at `docs/runbooks/UAT_PROCESS.md`:
+- Tier 1: AI automated -- 581 tests, all 12 tools covered
+- Tier 2: AI UX -- Cycle 1 (send + list_messages) verified in claude.ai via Chrome
+- Tier 3: Human -- checklist template ready, pending Keith sign-off
 
-- Dead letter handling for offline agents
-- System messages (reserved `system` sender)
-- Email notifications (may consume widget events internally)
+## Sprint 7 -- Dead Letter Handling (DONE)
+
+- delivery_status column on messages (migration 008)
+- is_user_offline() checks last_seen against 24h threshold
+- Messages to offline users get delivery_status='queued'
+- process_dead_letters() transitions queued->delivered on next activity
+- update_last_seen_and_process_dead_letters() combines both operations
+- System message generated when message queued for offline user
+- 20 tests in test_dead_letters.py
+
+## Sprint 7 -- System Messages (DONE)
+
+- Reserved 'system' user (migration 009, user_type='system')
+- insert_system_message() bypasses participant checks
+- System user excluded from get_all_users() and health endpoint
+- send_message tool rejects from_user='system'
+- add_participant generates system message on join
+- Dead letter sends generate system message on queue
+- 11 tests in test_system_messages.py
+
+## Sprint 7 -- Remaining Features
+
+- Email notifications
 - Production hardening
+- Human UAT sign-off (Keith)
 
 ## Completed
 
 - Sprints 1-6 implemented via TDD. 471 tests. (2026-04-05 to 2026-04-06)
-- All GitHub issues closed except #15 (soft deletes). (2026-04-06)
-- GitHub OAuth live on all environments (separate apps per env). (2026-04-06)
-- Handle picker for new OAuth users + change handle in settings. (2026-04-06)
-- MCP tool names prefixed mailbox_* to avoid Claude Desktop collisions. (2026-04-06)
-- list_messages body truncation to 200 chars. (2026-04-06)
-- Promoted to staging and production. All 3 environments live at v0.6.0. (2026-04-06)
-- Production promotion runbook created. (2026-04-06)
-- Keith's production account linked to GitHub (keith@ivenoclue.com). (2026-04-06)
-- Production DB orphaned oauth_codes cleaned (FK constraint fix). (2026-04-06)
-- BUG-001 fixed: to_user NOT NULL blocking all message sends. Migration 007. (2026-04-06)
-- TD-001 resolved: conftest.py now uses real migration path, legacy columns no longer cause divergence. (2026-04-06)
-- Full MCP tool test coverage: 534 tests, all 12 tools covered. (2026-04-06)
-- Search query column shadowing bug fixed (legacy messages.project). (2026-04-06)
-- Thread context controls: default limit=5, 2K body truncation, summary, body_display_note. (2026-04-06)
-- Schema parity guard (test_schema_parity.py) prevents future BUG-001-class bugs. (2026-04-06)
+- BUG-001 fixed: to_user NOT NULL. Migration 007. (2026-04-06)
+- TD-001 resolved: conftest.py uses real migration path. (2026-04-06)
+- TD-008 resolved: migrate_003 boolean fix for PostgreSQL. (2026-04-06)
+- Full MCP tool test coverage: 550 tests, all 12 tools. (2026-04-06)
+- Schema parity guard (test_schema_parity.py). (2026-04-06)
+- Thread context controls: limit=5, 2K truncation, summary, body_display_note. (2026-04-06)
+- Search query column shadowing bug fixed. (2026-04-06)
+- MCP Apps inbox widget: 13 commits, rendering in claude.ai. (2026-04-06)
+- OAuth issuer URL per-environment fix. (2026-04-06)
+- MCP Apps Widget Runbook created. (2026-04-06)
+- UAT process doc created (3 tiers). (2026-04-07)
+- Dead letter handling: delivery_status, offline detection, auto-redelivery. 20 tests. (2026-04-07)
+- System messages: reserved 'system' user, insert_system_message, event messages. 11 tests. (2026-04-07)
+- Tier 1 UAT: 581/581 passed. (2026-04-07)
+- Tier 2 UAT Cycle 1: send_message + list_messages verified in claude.ai. (2026-04-07)
+- Deployed to staging: 15 commits on mvp-1-staging. (2026-04-07)
