@@ -57,3 +57,4 @@
 - 2026-04-07: BUG-002 fixed (whoami Postgres HAVING alias). UAT process v1.1 (13 prompts).
 - 2026-04-07: Tier 3 Human UAT: 13/13 PASS. 589 tests total.
 - 2026-04-07: Merged mvp-1-staging to master. Deployed v0.7.0 to production. Health confirmed.
+- 2026-04-07: BUG-003 fixed (unread_only returning own messages). 591 tests. Deployed to production.

@@ -2,7 +2,7 @@
 
 **Reported:** 2026-04-07
 **Severity:** Medium
-**Status:** In progress
+**Status:** Resolved
 **Found by:** Keith (production UAT)
 
 ## Symptom
