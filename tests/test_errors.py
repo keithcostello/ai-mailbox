@@ -106,6 +106,9 @@ class TestErrorCodeRegistry:
             "SYSTEM_USER_DENIED",
             # Sprint 8
             "APPROVAL_NOT_PENDING", "INVALID_ACTION", "PROFILE_TOO_LARGE",
+            # Sprint 8 - Broadcast
+            "BROADCAST_NOT_FOUND", "ALREADY_CLAIMED", "NOT_CLAIMANT",
+            "BROADCAST_EXPIRED", "INVALID_BROADCAST_ACTION", "BROADCAST_ALREADY_FULFILLED",
         }
         assert set(ERROR_CODES.keys()) == expected
 

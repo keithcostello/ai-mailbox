@@ -851,3 +851,343 @@ def update_last_seen_and_process_dead_letters(db: DBConnection, user_id: str) ->
     """Update last_seen and process any dead letters. Returns count of redelivered messages."""
     update_last_seen(db, user_id)
     return process_dead_letters(db, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Broadcast queue (AI-to-AI crowdsourcing)
+# ---------------------------------------------------------------------------
+
+def create_broadcast_request(
+    db: DBConnection,
+    from_user: str,
+    question: str,
+    tags: list[str],
+    *,
+    source_context: str | None = None,
+    project: str = "general",
+) -> dict:
+    """Create a broadcast request in the shared pool."""
+    import json as _json
+    from ai_mailbox.config import BROADCAST_DEFAULT_EXPIRY_HOURS
+
+    br_id = _uuid()
+    now = _now()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=BROADCAST_DEFAULT_EXPIRY_HOURS)).isoformat()
+
+    db.execute(
+        """INSERT INTO broadcast_requests
+           (id, from_user, question, source_context, tags, project, status, expires_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)""",
+        (br_id, from_user, question, source_context, _json.dumps(tags), project, expires, now, now),
+    )
+    db.commit()
+    return {
+        "id": br_id,
+        "from_user": from_user,
+        "question": question,
+        "source_context": source_context,
+        "tags": tags,
+        "project": project,
+        "status": "open",
+        "expires_at": expires,
+        "created_at": now,
+    }
+
+
+def get_broadcast_request(db: DBConnection, broadcast_id: str) -> dict | None:
+    """Fetch a broadcast request by ID."""
+    return db.fetchone("SELECT * FROM broadcast_requests WHERE id = ?", (broadcast_id,))
+
+
+def get_open_broadcasts_for_user(db: DBConnection, user_id: str) -> list[dict]:
+    """Find open broadcasts matching a user's profile. Weighted scoring.
+
+    expertise_tags match = 2 points, observed_topics/projects/jira_tickets = 1 point.
+    Excludes own requests, claimed-by-self, and within-cooldown.
+    """
+    import json as _json
+
+    # Get user's full profile
+    meta = get_user_profile_metadata(db, user_id)
+    expertise = set(meta.get("expertise_tags", []))
+    observed = set(meta.get("observed_topics", []))
+    projects = set(meta.get("projects", []))
+    jira = set(meta.get("jira_tickets", []))
+
+    if not (expertise or observed or projects or jira):
+        return []
+
+    # Get all open broadcasts (not from this user)
+    rows = db.fetchall(
+        "SELECT * FROM broadcast_requests WHERE status = 'open' AND from_user != ? ORDER BY created_at DESC",
+        (user_id,),
+    )
+
+    now = datetime.now(timezone.utc)
+
+    # Get this user's claims (for cooldown exclusion)
+    claims = db.fetchall(
+        "SELECT broadcast_id, cooldown_until FROM broadcast_claims WHERE claimant_id = ?",
+        (user_id,),
+    )
+    cooldown_map = {}
+    for c in claims:
+        cooldown_map[c["broadcast_id"]] = c.get("cooldown_until")
+
+    scored = []
+    for row in rows:
+        br_id = row["id"]
+
+        # Skip if in cooldown
+        if br_id in cooldown_map:
+            cooldown_str = cooldown_map[br_id]
+            if cooldown_str:
+                try:
+                    cooldown_dt = datetime.fromisoformat(cooldown_str)
+                    if cooldown_dt.tzinfo is None:
+                        cooldown_dt = cooldown_dt.replace(tzinfo=timezone.utc)
+                    if now < cooldown_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+        # Parse broadcast tags
+        try:
+            br_tags = set(_json.loads(row["tags"]))
+        except (ValueError, TypeError):
+            continue
+
+        if not br_tags:
+            continue
+
+        # Score: expertise=2, observed/projects/jira=1
+        score = 0
+        matched = []
+        for tag in br_tags:
+            if tag in expertise:
+                score += 2
+                matched.append(tag)
+            elif tag in observed or tag in projects or tag in jira:
+                score += 1
+                matched.append(tag)
+
+        if score < 1:
+            continue
+
+        scored.append({
+            "broadcast_id": row["id"],
+            "from_user": row["from_user"],
+            "question": row["question"],
+            "source_context": row.get("source_context"),
+            "tags": list(br_tags),
+            "project": row["project"],
+            "match_score": score,
+            "matched_tags": matched,
+            "created_at": row["created_at"],
+            "expires_at": row.get("expires_at"),
+        })
+
+    scored.sort(key=lambda x: (-x["match_score"], x["broadcast_id"]))
+    return scored
+
+
+def claim_broadcast(db: DBConnection, broadcast_id: str, claimant_id: str) -> dict:
+    """Claim a broadcast request. Creates claim record."""
+    import sqlite3 as _sqlite3
+
+    br = get_broadcast_request(db, broadcast_id)
+    if not br:
+        return make_error("BROADCAST_NOT_FOUND", "Broadcast request does not exist")
+
+    if br["status"] not in ("open", "claimed"):
+        return make_error("BROADCAST_EXPIRED", f"Broadcast status is '{br['status']}', cannot claim")
+
+    claim_id = _uuid()
+    now = _now()
+
+    try:
+        db.execute(
+            """INSERT INTO broadcast_claims
+               (id, broadcast_id, claimant_id, status, seen_at, created_at, updated_at)
+               VALUES (?, ?, ?, 'claimed', ?, ?, ?)""",
+            (claim_id, broadcast_id, claimant_id, now, now, now),
+        )
+    except (_sqlite3.IntegrityError, Exception) as e:
+        err = str(e).lower()
+        if "unique" in err or "duplicate" in err:
+            return make_error("ALREADY_CLAIMED", "You have already claimed this broadcast")
+        raise
+
+    db.execute(
+        "UPDATE broadcast_requests SET status = 'claimed', updated_at = ? WHERE id = ?",
+        (now, broadcast_id),
+    )
+    db.commit()
+
+    return {
+        "id": claim_id,
+        "broadcast_id": broadcast_id,
+        "claimant_id": claimant_id,
+        "status": "claimed",
+        "question": br["question"],
+        "source_context": br.get("source_context"),
+        "tags": br["tags"],
+    }
+
+
+def approve_gate1(db: DBConnection, broadcast_id: str, claimant_id: str) -> dict:
+    """Gate 1: human approves answering the question. Status -> drafting."""
+    now = _now()
+    db.execute(
+        """UPDATE broadcast_claims SET status = 'drafting', gate1_approved_at = ?, updated_at = ?
+           WHERE broadcast_id = ? AND claimant_id = ? AND status = 'claimed'""",
+        (now, now, broadcast_id, claimant_id),
+    )
+    db.execute(
+        "UPDATE broadcast_requests SET status = 'drafting', updated_at = ? WHERE id = ?",
+        (now, broadcast_id),
+    )
+    db.commit()
+    return {"broadcast_id": broadcast_id, "claimant_id": claimant_id, "status": "drafting"}
+
+
+def decline_gate1(db: DBConnection, broadcast_id: str, claimant_id: str) -> dict:
+    """Gate 1: human declines. Release back to pool with cooldown."""
+    from ai_mailbox.config import BROADCAST_COOLDOWN_HOURS
+
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    cooldown = (now_dt + timedelta(hours=BROADCAST_COOLDOWN_HOURS)).isoformat()
+
+    db.execute(
+        """UPDATE broadcast_claims SET status = 'released', gate1_declined_at = ?,
+           cooldown_until = ?, updated_at = ?
+           WHERE broadcast_id = ? AND claimant_id = ?""",
+        (now, cooldown, now, broadcast_id, claimant_id),
+    )
+    # Check if any other active claims exist
+    active = db.fetchone(
+        "SELECT id FROM broadcast_claims WHERE broadcast_id = ? AND status IN ('claimed', 'drafting')",
+        (broadcast_id,),
+    )
+    if not active:
+        db.execute(
+            "UPDATE broadcast_requests SET status = 'open', updated_at = ? WHERE id = ?",
+            (now, broadcast_id),
+        )
+    db.commit()
+    return {
+        "broadcast_id": broadcast_id,
+        "claimant_id": claimant_id,
+        "status": "released",
+        "cooldown_until": cooldown,
+    }
+
+
+def submit_draft(db: DBConnection, broadcast_id: str, claimant_id: str, draft_text: str) -> dict:
+    """Submit a draft response for Gate 2 review."""
+    now = _now()
+    db.execute(
+        """UPDATE broadcast_claims SET status = 'pending_review', response_draft = ?, updated_at = ?
+           WHERE broadcast_id = ? AND claimant_id = ? AND status = 'drafting'""",
+        (draft_text, now, broadcast_id, claimant_id),
+    )
+    db.execute(
+        "UPDATE broadcast_requests SET status = 'pending_review', updated_at = ? WHERE id = ?",
+        (now, broadcast_id),
+    )
+    db.commit()
+    return {"broadcast_id": broadcast_id, "claimant_id": claimant_id, "status": "pending_review"}
+
+
+def approve_gate2(db: DBConnection, broadcast_id: str, claimant_id: str) -> dict:
+    """Gate 2: human approves the draft. Status -> fulfilled."""
+    now = _now()
+    db.execute(
+        """UPDATE broadcast_claims SET status = 'fulfilled', gate2_approved_at = ?, updated_at = ?
+           WHERE broadcast_id = ? AND claimant_id = ? AND status = 'pending_review'""",
+        (now, now, broadcast_id, claimant_id),
+    )
+    db.execute(
+        "UPDATE broadcast_requests SET status = 'fulfilled', updated_at = ? WHERE id = ?",
+        (now, broadcast_id),
+    )
+    db.commit()
+    return {"broadcast_id": broadcast_id, "claimant_id": claimant_id, "status": "fulfilled"}
+
+
+def reject_gate2(db: DBConnection, broadcast_id: str, claimant_id: str) -> dict:
+    """Gate 2: human rejects the draft. Claimant can redraft or release."""
+    now = _now()
+    db.execute(
+        """UPDATE broadcast_claims SET status = 'rejected', gate2_declined_at = ?, updated_at = ?
+           WHERE broadcast_id = ? AND claimant_id = ? AND status = 'pending_review'""",
+        (now, now, broadcast_id, claimant_id),
+    )
+    db.commit()
+    return {"broadcast_id": broadcast_id, "claimant_id": claimant_id, "status": "rejected"}
+
+
+def cancel_broadcast(db: DBConnection, broadcast_id: str, from_user: str) -> dict:
+    """Sender cancels their broadcast."""
+    now = _now()
+    db.execute(
+        "UPDATE broadcast_requests SET status = 'cancelled', updated_at = ? WHERE id = ? AND from_user = ?",
+        (now, broadcast_id, from_user),
+    )
+    db.commit()
+    return {"broadcast_id": broadcast_id, "status": "cancelled"}
+
+
+def expire_stale_broadcasts(db: DBConnection) -> int:
+    """Expire open broadcasts past their expiry time. Returns count expired."""
+    now = _now()
+    rows = db.fetchall(
+        "SELECT id, from_user FROM broadcast_requests WHERE status = 'open' AND expires_at < ?",
+        (now,),
+    )
+    for row in rows:
+        db.execute(
+            "UPDATE broadcast_requests SET status = 'expired', updated_at = ? WHERE id = ?",
+            (now, row["id"]),
+        )
+    db.commit()
+    return len(rows)
+
+
+def get_my_broadcasts(db: DBConnection, user_id: str, status: str | None = None) -> list[dict]:
+    """Sender's broadcasts, optionally filtered by status."""
+    if status:
+        return db.fetchall(
+            "SELECT * FROM broadcast_requests WHERE from_user = ? AND status = ? ORDER BY created_at DESC",
+            (user_id, status),
+        )
+    return db.fetchall(
+        "SELECT * FROM broadcast_requests WHERE from_user = ? ORDER BY created_at DESC",
+        (user_id,),
+    )
+
+
+def get_my_claims(db: DBConnection, user_id: str, status: str | None = None) -> list[dict]:
+    """Claimant's claims with broadcast context."""
+    if status:
+        rows = db.fetchall(
+            """SELECT bc.*, br.question, br.source_context, br.tags AS broadcast_tags,
+                      br.from_user AS requester, br.project
+               FROM broadcast_claims bc
+               JOIN broadcast_requests br ON bc.broadcast_id = br.id
+               WHERE bc.claimant_id = ? AND bc.status = ?
+               ORDER BY bc.created_at DESC""",
+            (user_id, status),
+        )
+    else:
+        rows = db.fetchall(
+            """SELECT bc.*, br.question, br.source_context, br.tags AS broadcast_tags,
+                      br.from_user AS requester, br.project
+               FROM broadcast_claims bc
+               JOIN broadcast_requests br ON bc.broadcast_id = br.id
+               WHERE bc.claimant_id = ?
+               ORDER BY bc.created_at DESC""",
+            (user_id,),
+        )
+    return rows
