@@ -513,7 +513,10 @@ def get_unread_counts(db: DBConnection, user_id: str) -> dict[str, int]:
            JOIN conversation_participants cp ON c.id = cp.conversation_id
            WHERE cp.user_id = ?
            GROUP BY c.project
-           HAVING cnt > 0""",
+           HAVING SUM(
+                (SELECT COUNT(*) FROM messages m
+                 WHERE m.conversation_id = c.id AND m.sequence_number > cp.last_read_sequence)
+           ) > 0""",
         (user_id,),
     )
     return {r["project"]: r["cnt"] for r in rows}

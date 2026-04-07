@@ -125,45 +125,64 @@ AI uses Claude in Chrome MCP tools to test against claude.ai with the staging MC
 ### Trigger
 Before any production promotion. After all Tier 1 and Tier 2 pass.
 
+### Repeatable Test Prompts
+
+Type these exact prompts in claude.ai with the staging MCP server connected. Run them in order -- later steps depend on state from earlier ones.
+
+| Step | Prompt | Expected |
+|------|--------|----------|
+| 1 | `check my inbox` | Widget renders with conversations, timestamps, Compose button |
+| 2 | Click any conversation in widget | Thread view loads with message history |
+| 3 | Type a reply in the thread reply form | Reply sends, appears in thread |
+| 4 | Click Compose in widget | New message form appears |
+| 5 | `search my messages for "sprint"` | Returns messages containing "sprint" with project and date |
+| 6 | `acknowledge message [ID from step 5] as received` | State transitions pending -> received |
+| 7 | `mark my messages as read in my conversation with amy` | Confirmation with per-project read cursors |
+| 8 | `archive my conversation with amy for project wedding` | Archived confirmation. `check inbox` no longer shows it |
+| 9 | `create a group called "uat-test" with amy` | Group created, conversation ID returned |
+| 10 | `add [username] to the uat-test group` | Participant added, system message generated |
+| 11 | `list all users` | Returns registered users (excludes system user) |
+| 12 | `who am I` | Returns identity with unread counts per project |
+
 ### Checklist
 
 Copy this checklist for each UAT run. Mark pass/fail per item.
 
 ```
-## Human UAT Run — [DATE]
+## Human UAT Run -- [DATE]
 
 **Staging URL:** https://ai-mailbox-server-mvp-1-staging.up.railway.app
 **Tester:** Keith
 **MCP Server:** Connected to claude.ai via staging URL
 
-### Core Messaging
-- [ ] PASS/FAIL — Send message: "check inbox" shows widget with conversations
-- [ ] PASS/FAIL — Thread view: click conversation, thread loads with messages
-- [ ] PASS/FAIL — Reply: reply form visible, submit sends reply
-- [ ] PASS/FAIL — Compose: Compose button creates new conversation
+### Core Messaging (Steps 1-4)
+- [ ] PASS/FAIL -- check inbox: widget renders with conversations
+- [ ] PASS/FAIL -- Thread view: click conversation, thread loads with messages
+- [ ] PASS/FAIL -- Reply: reply form visible, submit sends reply
+- [ ] PASS/FAIL -- Compose: Compose button creates new conversation
 
-### Message Management
-- [ ] PASS/FAIL — Search: search returns relevant results
-- [ ] PASS/FAIL — Acknowledge: message state transitions correctly
-- [ ] PASS/FAIL — Mark read: unread count decreases
-- [ ] PASS/FAIL — Archive: conversation moves to archived
+### Message Management (Steps 5-8)
+- [ ] PASS/FAIL -- Search: returns relevant results with project context
+- [ ] PASS/FAIL -- Acknowledge: state transitions correctly (pending -> received)
+- [ ] PASS/FAIL -- Mark read: per-conversation read cursors advance
+- [ ] PASS/FAIL -- Archive: conversation removed from inbox, restorable
 
-### Group Features
-- [ ] PASS/FAIL — Create group: group conversation created
-- [ ] PASS/FAIL — Add participant: member added to group
+### Group Features (Steps 9-10)
+- [ ] PASS/FAIL -- Create group: group conversation created with participants
+- [ ] PASS/FAIL -- Add participant: member added, system message generated
 
-### Identity
-- [ ] PASS/FAIL — List users: returns registered users
-- [ ] PASS/FAIL — Whoami: returns current user with unread counts
+### Identity (Steps 11-12)
+- [ ] PASS/FAIL -- List users: returns registered users, excludes system
+- [ ] PASS/FAIL -- Whoami: returns identity with unread counts per project
 
 ### Widget
-- [ ] PASS/FAIL — Widget renders in claude.ai (not blank)
-- [ ] PASS/FAIL — Back button works
-- [ ] PASS/FAIL — Error states display correctly
+- [ ] PASS/FAIL -- Widget renders in claude.ai (not blank)
+- [ ] PASS/FAIL -- Back button works
+- [ ] PASS/FAIL -- Error states display correctly
 
 ### Sign-off
-- [ ] ALL PASS — Ready for production promotion
-- [ ] BLOCKED — Issues found: [describe]
+- [ ] ALL PASS -- Ready for production promotion
+- [ ] BLOCKED -- Issues found: [describe]
 
 Signed: _________________ Date: _________________
 ```
