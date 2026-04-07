@@ -467,6 +467,8 @@ def list_messages_query(
                 "WHERE cp.conversation_id = m.conversation_id AND cp.user_id = ?)"
             )
             params.append(user_id)
+            conditions.append("m.from_user != ?")
+            params.append(user_id)
         where = " AND ".join(conditions)
         rows = db.fetchall(
             f"""SELECT m.* FROM messages m
@@ -484,6 +486,8 @@ def list_messages_query(
             params.append(project)
         if unread_only:
             conditions.append("m.sequence_number > cp.last_read_sequence")
+            conditions.append("m.from_user != ?")
+            params.append(user_id)
         where = " AND ".join(conditions)
         rows = db.fetchall(
             f"""SELECT m.* FROM messages m
