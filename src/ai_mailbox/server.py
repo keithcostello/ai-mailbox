@@ -6,10 +6,12 @@ endpoints, and returns a Starlette ASGI app for deployment.
 
 import logging
 import sqlite3
+from pathlib import Path
 from urllib.parse import urlencode, parse_qs
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from mcp.types import CallToolResult, TextContent
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse as StarletteJSONResponse, HTMLResponse, RedirectResponse
 from starlette.routing import Route
@@ -29,6 +31,7 @@ from ai_mailbox.tools.add_participant import tool_add_participant
 from ai_mailbox.tools.search import tool_search_messages
 from ai_mailbox.tools.acknowledge import tool_acknowledge
 from ai_mailbox.tools.archive import tool_archive_conversation
+from ai_mailbox.tools.list_participants import tool_list_participants
 from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
 from ai_mailbox.web_oauth import create_oauth_routes
@@ -137,9 +140,14 @@ def create_app() -> object:
     provider = MailboxOAuthProvider(db=db, jwt_secret=config.jwt_secret)
     _oauth_provider = provider
 
-    # MCP server with OAuth
-    issuer_url = f"https://ai-mailbox-server-production.up.railway.app"
-    if not config.database_url:
+    # MCP server with OAuth — derive issuer URL from environment
+    import os
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if railway_domain:
+        issuer_url = f"https://{railway_domain}"
+    elif config.database_url:
+        issuer_url = "https://ai-mailbox-server-production.up.railway.app"
+    else:
         issuer_url = "http://localhost:8000"  # Local/test mode
 
     auth_settings = AuthSettings(
@@ -162,6 +170,20 @@ def create_app() -> object:
         mcp.settings.transport_security.allowed_hosts.append("*.up.railway.app")
         mcp.settings.transport_security.allowed_origins.append("https://*.up.railway.app")
         mcp.settings.transport_security.allowed_origins.append("https://*.up.railway.app:*")
+
+    # --- MCP Apps: Inbox Widget Resource ---
+    INBOX_WIDGET_URI = "ui://ai-mailbox/inbox.html"
+
+    @mcp.resource(
+        INBOX_WIDGET_URI,
+        name="Inbox Widget",
+        description="Interactive inbox for AI Mailbox",
+        mime_type="text/html;profile=mcp-app",
+        meta={"ui": {}},  # No external CSP needed — all CSS/JS inlined
+    )
+    def inbox_widget_resource() -> str:
+        html_path = Path(__file__).parent / "ui" / "inbox_widget.html"
+        return html_path.read_text(encoding="utf-8")
 
     # --- MCP Tools (user identity from OAuth token via contextvars) ---
 
@@ -197,22 +219,32 @@ def create_app() -> object:
             group_send_token=group_send_token,
         )
 
-    @mcp.tool()
+    @mcp.tool(meta={
+        "ui": {"resourceUri": INBOX_WIDGET_URI},
+        "ui/resourceUri": INBOX_WIDGET_URI,  # Legacy key for older hosts
+    })
     def mailbox_list_messages(
         project: str = "",
         unread_only: bool = True,
         conversation_id: str | None = None,
         limit: int = 20,
         after_sequence: int = 0,
-    ) -> dict:
+    ) -> CallToolResult:
         """List AI Mailbox messages without marking as read. Bodies truncated to 200 chars -- use mailbox_get_thread for full content. Pagination via after_sequence."""
+        import json
         uid = _get_user()
         logger.info(f"list_messages: user={uid} project={project or 'all'} conv={conversation_id}")
-        return tool_list_messages(
+        result = tool_list_messages(
             db, user_id=uid,
             project=project or None, unread_only=unread_only,
             conversation_id=conversation_id,
             limit=limit, after_sequence=after_sequence,
+        )
+        # Serialize through JSON to convert UUIDs/datetimes to strings
+        result_json = json.loads(json.dumps(result, default=str))
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(result_json))],
+            structuredContent=result_json,
         )
 
     @mcp.tool()
@@ -319,6 +351,13 @@ def create_app() -> object:
             db, user_id=uid, conversation_id=conversation_id, archive=archive,
         )
 
+    @mcp.tool()
+    def mailbox_list_participants(conversation_id: str) -> dict:
+        """List current participants in an AI Mailbox conversation. Returns authoritative membership state."""
+        uid = _get_user()
+        logger.info(f"list_participants: user={uid} conv={conversation_id}")
+        return tool_list_participants(db, user_id=uid, conversation_id=conversation_id)
+
     # --- Login page ---
 
     async def login_get(request: StarletteRequest):
@@ -372,11 +411,11 @@ def create_app() -> object:
     # --- Health endpoint ---
 
     async def health(request: StarletteRequest):
-        row = db.fetchone("SELECT COUNT(*) as cnt FROM users")
+        row = db.fetchone("SELECT COUNT(*) as cnt FROM users WHERE user_type != 'system'")
         user_count = row["cnt"] if row else 0
         return StarletteJSONResponse({
             "status": "healthy",
-            "version": "0.6.0",
+            "version": "0.7.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         })

@@ -1,62 +1,56 @@
 # AI_MAILBOX_PROJECT_PLAN
 
 **Status:** ACTIVE
-**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 6 complete, ready for Sprint 7
+**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 7 nearly complete
 **Expected Branch:** mvp-1-staging
 **PR URL:**
-**Relevant Handoff:** projects/AI_MAILBOX_PROJECT_PLAN/docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md
+**Relevant Handoff:** docs/handoff/ai-mailbox/HANDOFF_AI-MAILBOX_2026-04-06_V3.md
 
 ## Next Steps
 
-- Write Sprint 7 spec (webhooks, notifications, dead letter, system messages)
-- Implement Sprint 7 via TDD
-- Configure GitHub OAuth app and set env vars on Railway for live OAuth testing
-- Deploy and pass AI UX UAT + Human UAT
+- Keith: Run Human UAT (Tier 3) on claude.ai -- checklist in docs/runbooks/UAT_PROCESS.md
+- Implement email notifications (Sprint 7 remaining)
+- Production hardening and deploy
+- Sprint 8 planning
 
 ## Pending Tasks
 
-- Railway auto-deploy from mvp-1-staging push not working (used CLI fallback) [TD-002]
-- Resolve production dual-Postgres question (Postgres vs Postgres-bbLI, both at 0MB) [TD-003]
-- Staging DB has legacy columns (to_user, read, project on messages) -- migration 003 didn't drop them [TD-001]
-- Tailwind CDN in production -- acceptable for alpha, track for Sprint 6+ build step [TD-005]
-- GitHub OAuth not yet tested live (no GitHub OAuth app configured on Railway) [TD-006]
+- Human UAT sign-off (Tier 3) [SPRINT-7, BLOCKING PRODUCTION]
+- Email notifications [SPRINT-7]
+- Production hardening [SPRINT-7]
+- MCP login page GitHub OAuth (deferred) [SPRINT-7]
+- Railway auto-deploy from branch push not working [TD-002]
+- Resolve production dual-Postgres question (both at 0MB) [TD-003]
+- Tailwind CDN in production -- add build step [TD-005]
+- Amy's MCP connector URL needs updating for production [TD-007]
+- GitHub issue #15 open: soft deletes for messages
 
 ## Document Index (Required)
 
-### Structural Hygiene References
-
-| Document | Path | Purpose |
+| Document | Status | Owner |
 | --- | --- | --- |
-| Placement Standard | `.codex/agents/librarian/STRUCTURAL_HYGIENE_STANDARD.md` | Where every doc type goes |
-| Migration Guide | `.codex/agents/librarian/MIGRATION_GUIDE.md` | How to reorganize docs |
-
-### Project Documents
-
-| Document | Status | Owner | Linked Task / Usage Evidence |
-| --- | --- | --- | --- |
-| `memory/WAITING_ON.md` | active | Claude | Project tracker |
-| `memory/TODO.md` | active | Claude | Carry-over ledger |
-| `docs/specs/SPRINT_1_SPEC.md` | complete | Claude | Sprint 1 spec, approved and implemented |
-| `docs/specs/SPRINT_2_SPEC.md` | complete | Claude | Sprint 2 spec, approved, implemented, deployed |
-| `docs/specs/SPRINT_3_SPEC.md` | complete | Claude | Sprint 3 spec, approved, implemented, deployed |
-| `docs/specs/SPRINT_4_SPEC.md` | complete | Claude | Sprint 4 spec, approved, implemented, deployed |
-| `docs/specs/SPRINT_5_SPEC.md` | complete | Claude | Sprint 5 spec, approved, implemented, deployed |
-| `docs/specs/SPRINT_6_SPEC.md` | complete | Claude | Sprint 6 spec, approved, implemented, deployed |
-| `docs/architecture/ARCHITECTURE_DEEP_DIVE.md` | complete | Claude | Codebase analysis, 16 issues filed |
-| `docs/reference/RAILWAY_ENVIRONMENTS.md` | complete | Claude | Environment documentation |
-| `docs/plans/SAAS_PRODUCT_ANALYSIS.md` | complete | Claude | Auth, registration, pricing, UI analysis |
-| `docs/plans/FEATURE_REQUIREMENTS_ANALYSIS.md` | complete | Claude | 47 features prioritized P0-P3 |
-| `docs/plans/COMPETITIVE_LANDSCAPE.md` | complete | Claude | Protocols, frameworks, positioning |
-| `docs/plans/SPRINT_ROADMAP.md` | active | Claude | 8-sprint plan |
-| `docs/handoffs/SPRINT_5_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 5 continuation prompt (used) |
-| `docs/handoffs/SPRINT_6_CONTINUATION_PROMPT.md` | archived | Claude | Sprint 6 continuation prompt (used) |
+| `memory/WAITING_ON.md` | active | Claude |
+| `memory/TODO.md` | active | Claude |
+| `docs/specs/SPRINT_1_SPEC.md` through `SPRINT_6_SPEC.md` | complete | Claude |
+| `docs/runbooks/STAGING_TO_PRODUCTION.md` | active | Claude |
+| `docs/runbooks/MCP_APPS_WIDGET_RUNBOOK.md` | active | Claude |
+| `docs/runbooks/UAT_PROCESS.md` | active | Claude |
+| `docs/plans/SPRINT_ROADMAP.md` | active | Claude |
+| `docs/handoffs/SPRINT_7_HANDOFF.md` | current | Claude |
+| `docs/bugs/BUG-001_to_user_not_null.md` | resolved | Claude |
 
 ## Recent Activity Log
 
 - 2026-04-05: Sprints 1-2 implemented. 287 tests. Issues #4-8, #12 closed.
-- 2026-04-06: Sprint 3 implemented (security + DaisyUI). 320 tests. Issues #1-3, #16 closed.
-- 2026-04-06: Sprint 4 implemented (search, JSON, polling). 372 tests. Issue #14 closed.
-- 2026-04-06: Sprint 5 implemented (ACK, archiving, agent identity, tech debt). 424 tests. Issues #9-11 closed.
-- 2026-04-06: UI redesign: fantasy->corporate theme, chat bubbles->flat Slack-style, monochrome+accent design.
-- 2026-04-06: UI polish: bolder names, colored avatars, primary unread counts (f5801f1). Human UAT passed.
-- 2026-04-06: Sprint 6 implemented (GitHub OAuth, settings page, invite mode, README, version fix). 461 tests. Issue #13 closed.
+- 2026-04-06: Sprints 3-5 implemented. 424 tests. Issues #1-3, #9-11, #14, #16 closed.
+- 2026-04-06: Sprint 6 implemented (GitHub OAuth, settings, invite mode, README). 461 tests.
+- 2026-04-06: BUG-001 fixed + full MCP tool test coverage (534 tests). conftest migration path.
+- 2026-04-06: migrate_003 boolean fix (TD-008). Thread context controls (limit=5, 2K truncation).
+- 2026-04-06: MCP Apps inbox widget -- interactive HTML renders inside claude.ai.
+- 2026-04-06: Resolved CSP issues (inline all CSS/JS), fixed handshake protocol, UUID serialization.
+- 2026-04-06: Widget proven working: inbox view, click-to-thread, avatars, reply form, callServerTool.
+- 2026-04-06: OAuth issuer URL fixed per-environment (RAILWAY_PUBLIC_DOMAIN).
+- 2026-04-06: MCP Apps Widget Runbook created. 550 tests, 13 commits on mvp-1-staging.
+- 2026-04-07: UAT process doc created (3 tiers, tool manifest, rotation schedule, human checklist).
+- 2026-04-07: Dead letter handling implemented (20 tests). System messages implemented (11 tests).
+- 2026-04-07: 581/581 tests passing. Deployed to staging. Tier 2 UAT Cycle 1 passed in claude.ai.

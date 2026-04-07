@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from ai_mailbox.config import MAX_BODY_LENGTH
+from ai_mailbox.config import MAX_BODY_LENGTH, THREAD_BODY_DISPLAY_LIMIT
 from ai_mailbox.db.queries import (
     find_or_create_direct_conversation,
     find_or_create_group_by_members,
@@ -13,6 +13,8 @@ from ai_mailbox.db.queries import (
     get_conversation_participants,
     get_user,
     insert_message,
+    insert_system_message,
+    is_user_offline,
 )
 from ai_mailbox.errors import is_error, make_error
 from ai_mailbox.group_tokens import generate_token, validate_token
@@ -37,6 +39,9 @@ def tool_send_message(
 ) -> dict:
     """Send a message. Supports direct (to=str), group (to=list), or existing conversation."""
     # --- Validation ---
+    if user_id == "system":
+        return make_error("SYSTEM_USER_DENIED", "The 'system' user cannot send messages via this tool")
+
     if not body.strip():
         return make_error("EMPTY_BODY", "Message body cannot be empty", param="body")
 
@@ -117,15 +122,30 @@ def _send_direct(
     if is_error(result):
         return result
 
+    # Dead letter: check if recipient is offline
+    offline = is_user_offline(db, to)
+    delivery_status = "queued" if offline else "delivered"
+    if offline:
+        db.execute(
+            "UPDATE messages SET delivery_status = 'queued' WHERE id = ?",
+            (result["id"],),
+        )
+        insert_system_message(db, conv_id, f"{to} is currently offline. Message queued for delivery.")
+        db.commit()
+
     conv = get_conversation(db, conv_id)
-    return {
+    resp = {
         "message_id": result["id"],
         "conversation_id": conv_id,
         "from_user": user_id,
         "to_user": to,
         "to_users": [to],
         "project": conv["project"] if conv else project,
+        "delivery_status": delivery_status,
     }
+    if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+        resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+    return resp
 
 
 def _send_group(
@@ -182,7 +202,7 @@ def _send_to_conversation(
             return result
 
         other_users = [p for p in participants if p != user_id]
-        return {
+        resp = {
             "message_id": result["id"],
             "conversation_id": conversation_id,
             "from_user": user_id,
@@ -190,6 +210,9 @@ def _send_to_conversation(
             "to_users": other_users,
             "project": conv["project"],
         }
+        if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+            resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+        return resp
 
     # Group conversations: require token
     return _group_confirmation_gate(
@@ -245,7 +268,7 @@ def _group_confirmation_gate(
         return result
 
     other_users = [p for p in participants if p != user_id]
-    return {
+    resp = {
         "message_id": result["id"],
         "conversation_id": conversation_id,
         "from_user": user_id,
@@ -253,3 +276,6 @@ def _group_confirmation_gate(
         "to_users": other_users,
         "project": conv["project"] if conv else "general",
     }
+    if len(body) > THREAD_BODY_DISPLAY_LIMIT:
+        resp["body_display_note"] = f"Bodies over {THREAD_BODY_DISPLAY_LIMIT} chars are truncated in thread views"
+    return resp

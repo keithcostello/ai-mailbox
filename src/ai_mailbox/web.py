@@ -848,11 +848,11 @@ def create_web_routes(db: DBConnection, provider: MailboxOAuthProvider, jwt_secr
     # --- Health ---
 
     async def web_health(request: Request):
-        row = db.fetchone("SELECT COUNT(*) as cnt FROM users")
+        row = db.fetchone("SELECT COUNT(*) as cnt FROM users WHERE user_type != 'system'")
         user_count = row["cnt"] if row else 0
         health = {
             "status": "healthy",
-            "version": "0.6.0",
+            "version": "0.7.0",
             "user_count": user_count,
             "auth": "oauth2.1",
         }

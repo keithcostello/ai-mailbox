@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Mailbox</title>
+    <style>
+        :root { --primary: #4f46e5; --primary-light: rgba(79,70,229,0.1); --bg: #ffffff; --bg-alt: #f9fafb; --border: #e5e7eb; --text: #111827; --text-muted: #6b7280; --text-light: #9ca3af; --success: #059669; --warning: #d97706; --error: #dc2626; --info: #2563eb; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+        #app { min-height: 200px; max-height: 500px; display: flex; flex-direction: column; overflow: hidden; }
+        .header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 10; }
+        .header-title { font-size: 13px; font-weight: 700; }
+        .btn { display: inline-flex; align-items: center; padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; transition: background 0.15s; }
+        .btn:hover { background: var(--bg-alt); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { opacity: 0.9; }
+        .scroll-area { flex: 1; overflow-y: auto; }
+        .conv-item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+        .conv-item:hover { background: var(--bg-alt); }
+        .conv-header { display: flex; align-items: center; justify-content: space-between; }
+        .conv-from { font-size: 13px; font-weight: 600; }
+        .conv-time { font-size: 11px; color: var(--text-light); flex-shrink: 0; margin-left: 8px; }
+        .conv-subject { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .conv-preview { font-size: 12px; color: var(--text-light); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .msg-row { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        .msg-row:last-child { border-bottom: none; }
+        .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+        .msg-content { flex: 1; min-width: 0; }
+        .msg-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+        .msg-from { font-size: 13px; font-weight: 700; }
+        .msg-time { font-size: 11px; color: var(--text-light); }
+        .msg-body { font-size: 13px; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+        .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+        .badge-bot { background: var(--bg-alt); color: var(--text-light); }
+        .badge-received { background: rgba(37,99,235,0.1); color: var(--info); }
+        .badge-processing { background: rgba(217,119,6,0.1); color: var(--warning); }
+        .badge-completed { background: rgba(5,150,105,0.1); color: var(--success); }
+        .badge-failed { background: rgba(220,38,38,0.1); color: var(--error); }
+        .reply-bar { border-top: 1px solid var(--border); padding: 8px 12px; background: var(--bg); display: flex; gap: 8px; align-items: flex-end; }
+        .reply-bar textarea { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: inherit; resize: none; min-height: 36px; }
+        .empty { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-light); font-size: 13px; }
+        .loading { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-light); }
+        .form-group { margin-bottom: 12px; }
+        .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 4px; }
+        .form-input, .form-select, .form-textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: inherit; background: var(--bg); }
+        .form-textarea { resize: vertical; min-height: 80px; }
+        .truncated { font-size: 11px; color: var(--text-light); font-style: italic; }
+        .error-msg { font-size: 12px; color: var(--error); padding: 8px 12px; background: rgba(220,38,38,0.05); border: 1px solid rgba(220,38,38,0.2); border-radius: 4px; margin: 8px 12px; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <div class="header-title">AI Mailbox</div>
+        <button class="btn btn-primary" onclick="window.__compose && window.__compose()">Compose</button>
+    </div>
+    <div class="scroll-area" id="content">
+        <div class="empty">Connecting to mailbox...</div>
+    </div>
+</div>
+
+<script>
+// --- Minimal MCP Apps Client (inline, no SDK dependency) ---
+// Protocol: Host sends ui/initialize to view, then ui/toolResult.
+// View listens and can send tools/call requests back.
+const MCPApp = {
+    _reqId: 1,
+    _pending: {},
+    _initialized: false,
+    ontoolresult: null,
+
+    connect() {
+        window.addEventListener("message", (e) => this._handleMessage(e));
+        // View sends ui/initialize TO the host (per MCP Apps spec)
+        var initId = this._reqId++;
+        this._pending[initId] = {
+            resolve: (result) => {
+                this._initialized = true;
+                console.log("[MCP Widget] Initialized, sending notifications/initialized");
+                // Send initialized notification
+                window.parent.postMessage({
+                    jsonrpc: "2.0",
+                    method: "ui/notifications/initialized"
+                }, "*");
+            },
+            reject: (err) => console.error("[MCP Widget] Init failed:", err)
+        };
+        window.parent.postMessage({
+            jsonrpc: "2.0",
+            method: "ui/initialize",
+            id: initId,
+            params: {
+                protocolVersion: "2026-01-26",
+                appInfo: { name: "AI Mailbox Inbox", version: "1.0.0" },
+                appCapabilities: {}
+            }
+        }, "*");
+    },
+
+    _handleMessage(event) {
+        const msg = event.data;
+        if (!msg || typeof msg !== "object") return;
+
+        // Host sends tool result notification
+        if (msg.method === "ui/notifications/tool-result" || msg.method === "ui/toolResult" || msg.method === "notifications/ui/toolResult") {
+            if (this.ontoolresult) this.ontoolresult(msg.params);
+            return;
+        }
+
+        // Host sends tool input notification
+        if (msg.method === "ui/notifications/tool-input") {
+            // Could use this for streaming args
+            return;
+        }
+
+        // Host context changed
+        if (msg.method === "ui/notifications/host-context-changed") {
+            return;
+        }
+
+        // Handle responses to our requests (initialize, tool calls)
+        if (msg.id !== undefined && this._pending[msg.id]) {
+            const { resolve, reject } = this._pending[msg.id];
+            delete this._pending[msg.id];
+            if (msg.error) reject(new Error(msg.error.message || "RPC error"));
+            else resolve(msg.result);
+            return;
+        }
+    },
+
+    async callServerTool(params) {
+        const id = this._reqId++;
+        return new Promise((resolve, reject) => {
+            this._pending[id] = { resolve, reject };
+            window.parent.postMessage({
+                jsonrpc: "2.0",
+                method: "tools/call",
+                params: typeof params === "string" ? { name: params, arguments: {} } : params,
+                id
+            }, "*");
+            setTimeout(() => {
+                if (this._pending[id]) {
+                    delete this._pending[id];
+                    reject(new Error("Tool call timeout"));
+                }
+            }, 30000);
+        });
+    }
+};
+
+// --- State ---
+const state = {
+    view: "inbox",
+    user: null,
+    conversations: [],
+    currentThread: null,
+    currentConvId: null,
+    users: [],
+    loading: true,
+    error: null,
+    hasMore: false,
+};
+
+const appEl = document.getElementById("app");
+
+// --- MCP Apps lifecycle ---
+MCPApp.ontoolresult = (result) => {
+    try {
+        let data = result.structuredContent || result.content;
+        if (Array.isArray(data)) {
+            const textItem = data.find(c => c.type === "text");
+            if (textItem) data = JSON.parse(textItem.text);
+        }
+        if (typeof data === "string") data = JSON.parse(data);
+        if (data && data.messages) {
+            state.conversations = data.messages;
+            state.hasMore = data.has_more || false;
+        }
+    } catch (e) {
+        console.error("Failed to parse tool result:", e);
+    }
+    state.loading = false;
+    render();
+    startPolling();
+    loadIdentity();
+};
+
+MCPApp.connect();
+
+// --- API helpers ---
+async function callTool(name, args) {
+    try {
+        return await MCPApp.callServerTool({ name, arguments: args || {} });
+    } catch (e) {
+        console.error("[Widget] " + name + " failed:", e);
+        state.error = name + " failed: " + e.message;
+        render();
+        return null;
+    }
+}
+
+function parseResult(result) {
+    if (!result) return null;
+    if (result.structuredContent) return result.structuredContent;
+    const content = result.content;
+    if (Array.isArray(content)) {
+        const t = content.find(c => c.type === "text");
+        if (t) try { return JSON.parse(t.text); } catch {}
+    }
+    return result;
+}
+
+async function loadIdentity() {
+    const r = await callTool("mailbox_whoami");
+    const d = parseResult(r);
+    if (d && d.user_id) { state.user = d; render(); }
+}
+
+async function loadInbox() {
+    const r = await callTool("mailbox_list_messages", { unread_only: false, limit: 50 });
+    const d = parseResult(r);
+    if (d && d.messages) { state.conversations = d.messages; state.hasMore = d.has_more || false; render(); }
+}
+
+async function loadThread(messageId, convId) {
+    state.loading = true; state.view = "thread"; state.currentConvId = convId; render();
+    const r = await callTool("mailbox_get_thread", { message_id: messageId, limit: 50, after_sequence: 0 });
+    const d = parseResult(r);
+    if (d) { state.currentThread = d; if (convId) await callTool("mailbox_mark_read", { conversation_id: convId }); }
+    state.loading = false; render();
+}
+
+async function sendReply(convId, messageId, body) {
+    if (!body.trim()) return;
+    await callTool("mailbox_reply_to_message", { message_id: messageId, body: body });
+    await loadThread(messageId, convId);
+}
+
+async function sendNewMessage(to, body, project, subject) {
+    if (!body.trim() || !to) return;
+    await callTool("mailbox_send_message", { to: to, body: body, project: project || "general", subject: subject || "" });
+    state.view = "inbox"; await loadInbox();
+}
+
+async function loadUsers() {
+    const r = await callTool("mailbox_list_users");
+    const d = parseResult(r);
+    if (d && d.users) state.users = d.users;
+}
+
+// --- Polling ---
+var pollTimer = null;
+function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function() { if (state.view === "inbox") loadInbox(); }, 15000);
+}
+
+// --- Relative time ---
+function relativeTime(iso) {
+    if (!iso) return "";
+    var diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+    if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+    return new Date(iso).toLocaleDateString();
+}
+
+function esc(s) { return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+// --- Render ---
+function render() {
+    if (state.loading && state.view !== "thread") {
+        appEl.innerHTML = '<div class="loading">Loading...</div>';
+        return;
+    }
+    if (state.view === "inbox") renderInbox();
+    else if (state.view === "thread") renderThread();
+    else if (state.view === "compose") renderCompose();
+}
+
+function renderError() {
+    if (!state.error) return '';
+    return '<div class="error-msg">' + esc(state.error) + '</div>';
+}
+
+function renderInbox() {
+    var header = '<div class="header"><div class="header-title">Inbox' +
+        (state.user ? ' &mdash; ' + esc(state.user.display_name) : '') +
+        '</div><button class="btn btn-primary" onclick="window.__compose()">Compose</button></div>';
+
+    if (!state.conversations.length) {
+        appEl.innerHTML = header + '<div class="empty">No messages yet</div>';
+        return;
+    }
+
+    var convMap = {};
+    var convOrder = [];
+    state.conversations.forEach(function(msg) {
+        var cid = msg.conversation_id;
+        if (!convMap[cid]) { convMap[cid] = { messages: [], latest: msg }; convOrder.push(cid); }
+        convMap[cid].messages.push(msg);
+        if (msg.created_at > convMap[cid].latest.created_at) convMap[cid].latest = msg;
+    });
+
+    var html = '';
+    convOrder.forEach(function(cid) {
+        var conv = convMap[cid];
+        var msg = conv.latest;
+        var firstId = conv.messages[0].id || msg.id;
+        html += '<div class="conv-item" onclick="window.__openThread(\'' + esc(firstId) + "','" + esc(cid) + "')\">" +
+            '<div class="conv-header"><span class="conv-from">' + esc(msg.from_user) + '</span>' +
+            '<span class="conv-time">' + relativeTime(msg.created_at) + '</span></div>' +
+            (msg.subject ? '<div class="conv-subject">' + esc(msg.subject) + '</div>' : '') +
+            '<div class="conv-preview">' + esc((msg.body || "").slice(0, 80)) + '</div></div>';
+    });
+
+    appEl.innerHTML = header + '<div class="scroll-area">' + html + '</div>';
+}
+
+function renderThread() {
+    var thread = state.currentThread;
+    var back = '<div class="header"><button class="btn" onclick="window.__backToInbox()">&larr; Back</button>' +
+        '<div class="header-title" style="margin-left:8px">' +
+        (thread && thread.conversation && thread.conversation.project ? esc(thread.conversation.project) : 'Thread') +
+        '</div><div style="flex:1"></div></div>';
+
+    if (state.loading || !thread) {
+        appEl.innerHTML = back + '<div class="loading">Loading thread...</div>';
+        return;
+    }
+
+    var msgs = thread.messages || [];
+    var lastMsgId = msgs.length ? msgs[msgs.length - 1].id : null;
+    var html = '';
+
+    msgs.forEach(function(msg) {
+        var initials = esc((msg.from_user || "??").slice(0, 2).toUpperCase());
+        var ackBadge = '';
+        if (msg.ack_state && msg.ack_state !== "pending") {
+            var cls = "badge badge-" + msg.ack_state;
+            ackBadge = '<span class="' + cls + '">' + esc(msg.ack_state) + '</span>';
+        }
+        html += '<div class="msg-row"><div class="avatar">' + initials + '</div><div class="msg-content">' +
+            '<div class="msg-meta"><span class="msg-from">' + esc(msg.from_user) + '</span>' +
+            '<span class="msg-time">' + relativeTime(msg.created_at) + '</span>' + ackBadge + '</div>' +
+            '<div class="msg-body">' + esc(msg.body) + '</div>' +
+            (msg.truncated ? '<span class="truncated">(truncated &mdash; ' + msg.full_length + ' chars)</span>' : '') +
+            '</div></div>';
+    });
+
+    var replyBar = '<div class="reply-bar"><textarea id="reply-body" rows="2" placeholder="Reply..."></textarea>' +
+        '<button class="btn btn-primary" onclick="window.__sendReply()">Reply</button></div>';
+
+    appEl.innerHTML = back + '<div class="scroll-area">' + html + '</div>' + replyBar;
+    var sa = appEl.querySelector(".scroll-area");
+    if (sa) sa.scrollTop = sa.scrollHeight;
+}
+
+function renderCompose() {
+    var back = '<div class="header"><button class="btn" onclick="window.__backToInbox()">&larr; Back</button>' +
+        '<div class="header-title" style="margin-left:8px">Compose</div><div style="flex:1"></div></div>';
+
+    var opts = state.users.map(function(u) {
+        return '<option value="' + esc(u.id) + '">' + esc(u.display_name) + ' (' + esc(u.id) + ')</option>';
+    }).join("");
+
+    appEl.innerHTML = back + '<div class="scroll-area" style="padding:12px">' +
+        '<div class="form-group"><label class="form-label">To</label>' +
+        '<select id="compose-to" class="form-select"><option value="">Select recipient...</option>' + opts + '</select></div>' +
+        '<div class="form-group"><label class="form-label">Project</label>' +
+        '<input id="compose-project" class="form-input" value="general"></div>' +
+        '<div class="form-group"><label class="form-label">Subject (optional)</label>' +
+        '<input id="compose-subject" class="form-input"></div>' +
+        '<div class="form-group"><label class="form-label">Message</label>' +
+        '<textarea id="compose-body" class="form-textarea" rows="4" maxlength="10000"></textarea></div>' +
+        '<button class="btn btn-primary" onclick="window.__sendCompose()">Send Message</button></div>';
+}
+
+// --- Global handlers ---
+window.__openThread = function(mid, cid) { loadThread(mid, cid); };
+window.__backToInbox = function() { state.view = "inbox"; loadInbox(); };
+window.__compose = async function() { state.view = "compose"; await loadUsers(); render(); };
+window.__sendReply = async function() {
+    var el = document.getElementById("reply-body");
+    if (!el || !el.value.trim()) return;
+    var thread = state.currentThread;
+    if (!thread || !thread.messages || !thread.messages.length) return;
+    var lastMsg = thread.messages[thread.messages.length - 1];
+    el.disabled = true;
+    await sendReply(state.currentConvId, lastMsg.id, el.value);
+    el.disabled = false; el.value = "";
+};
+window.__sendCompose = async function() {
+    var to = document.getElementById("compose-to").value;
+    var body = document.getElementById("compose-body").value;
+    var project = document.getElementById("compose-project").value;
+    var subject = document.getElementById("compose-subject").value;
+    if (!to || !body.trim()) return;
+    await sendNewMessage(to, body, project, subject);
+};
+
+// --- Mock mode ---
+if (new URLSearchParams(window.location.search).get("mock") === "true") {
+    state.user = { user_id: "keith", display_name: "Keith" };
+    state.conversations = [
+        { id: "m1", conversation_id: "c1", from_user: "amy", subject: "Deploy Plan", body: "Can you check the Railway logs?", created_at: new Date(Date.now() - 3600000).toISOString(), ack_state: "pending" },
+        { id: "m2", conversation_id: "c2", from_user: "bob", body: "PR #42 ready for review", created_at: new Date(Date.now() - 7200000).toISOString(), ack_state: "received" },
+    ];
+    state.loading = false;
+    render();
+}
+</script>
+</body>
+</html>

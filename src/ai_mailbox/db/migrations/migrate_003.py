@@ -157,8 +157,8 @@ def migrate_003_data(db: DBConnection) -> dict:
                    FROM messages m
                    WHERE m.conversation_id = ?
                      AND m.to_user = ?
-                     AND m.read = 1""",
-                (p["conversation_id"], p["user_id"]),
+                     AND m.read = ?""",
+                (p["conversation_id"], p["user_id"], True),
             )
             if max_read and max_read["max_seq"]:
                 db.execute(

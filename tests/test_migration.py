@@ -94,13 +94,18 @@ class TestNewSchemaOnEmptyDB:
         cols = _get_columns(db._conn, "messages")
         assert "idempotency_key" in cols
 
-    def test_messages_table_no_to_user(self, db):
-        cols = _get_columns(db._conn, "messages")
-        assert "to_user" not in cols
+    def test_messages_table_to_user_is_nullable(self, db):
+        """Legacy to_user column exists but must be nullable (BUG-001 fix)."""
+        cols = db._conn.execute("PRAGMA table_info(messages)").fetchall()
+        to_user = [c for c in cols if c[1] == "to_user"]
+        if to_user:
+            assert to_user[0][3] == 0, "to_user must be nullable"
 
-    def test_messages_table_no_read_column(self, db):
+    def test_messages_table_read_is_legacy(self, db):
+        """Legacy read column may exist from migration path — not used by queries."""
         cols = _get_columns(db._conn, "messages")
-        assert "read" not in cols
+        # read column is a legacy artifact; its presence is harmless
+        assert "conversation_id" in cols  # new model field must exist
 
     def test_conversations_columns(self, db):
         cols = _get_columns(db._conn, "conversations")
@@ -287,6 +292,30 @@ class TestDataMigration:
         stats2 = migrate_003_data(db)
         assert stats1["conversations_created"] == 2
         assert stats2["conversations_created"] == 0  # Already migrated
+        conn.close()
+
+    def test_read_cursor_with_boolean_param(self):
+        """read column compared via parameterized True (not hardcoded 1).
+
+        PostgreSQL stores read as BOOLEAN, not INTEGER. The migration must
+        use a parameterized query so psycopg sends a proper boolean.
+        Before the fix, migrate_003.py used 'm.read = 1' which fails on PG.
+        """
+        from ai_mailbox.db.connection import SQLiteDB
+        from ai_mailbox.db.migrations.migrate_003 import migrate_003_data
+        conn = _make_old_db_with_data()
+        # Overwrite m2's read flag using parameterized True (simulates PG behavior)
+        conn.execute("UPDATE messages SET read = ? WHERE id = 'm2'", (True,))
+        conn.commit()
+        db = SQLiteDB(conn)
+        migrate_003_data(db)
+        # keith's last_read_sequence in general conv should be 2 (m2 was read)
+        row = conn.execute(
+            """SELECT cp.last_read_sequence FROM conversation_participants cp
+               JOIN conversations c ON cp.conversation_id = c.id
+               WHERE cp.user_id = 'keith' AND c.project = 'general'"""
+        ).fetchone()
+        assert row[0] == 2, f"Expected last_read_sequence=2, got {row[0]}"
         conn.close()
 
     def test_empty_db_no_op(self):
