@@ -24,6 +24,19 @@ ERROR_CODES: dict[str, dict] = {
     "INVALID_JSON":           {"retryable": False},
     # Sprint 5
     "INVALID_STATE_TRANSITION": {"retryable": False},
+    # Sprint 7
+    "SYSTEM_USER_DENIED":       {"retryable": False},
+    # Sprint 8
+    "APPROVAL_NOT_PENDING":     {"retryable": False},
+    "INVALID_ACTION":           {"retryable": False},
+    "PROFILE_TOO_LARGE":        {"retryable": False},
+    # Sprint 8 - Broadcast
+    "BROADCAST_NOT_FOUND":      {"retryable": False},
+    "ALREADY_CLAIMED":          {"retryable": False},
+    "NOT_CLAIMANT":             {"retryable": False},
+    "BROADCAST_EXPIRED":        {"retryable": False},
+    "INVALID_BROADCAST_ACTION": {"retryable": False},
+    "BROADCAST_ALREADY_FULFILLED": {"retryable": False},
 }
 
 

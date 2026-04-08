@@ -58,6 +58,23 @@ def tool_send_message(
         except (json.JSONDecodeError, TypeError) as e:
             return make_error("INVALID_JSON", f"Body is not valid JSON: {e}", param="body")
 
+    if content_type == "ai-to-ai/request":
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, TypeError) as e:
+            return make_error("INVALID_JSON", f"ai-to-ai/request body must be valid JSON: {e}", param="body")
+        for field in ("question", "source_context", "tags"):
+            if field not in parsed:
+                return make_error("INVALID_PARAMETER", f"ai-to-ai/request missing required field '{field}'", param="body")
+
+    if content_type == "ai-to-ai/response":
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, TypeError) as e:
+            return make_error("INVALID_JSON", f"ai-to-ai/response body must be valid JSON: {e}", param="body")
+        if "draft_response" not in parsed:
+            return make_error("INVALID_PARAMETER", "ai-to-ai/response missing required field 'draft_response'", param="body")
+
     # --- Route to the right mode ---
 
     # Mode 3: Existing conversation
@@ -113,14 +130,38 @@ def _send_direct(
         return make_error("RECIPIENT_NOT_FOUND", f"User '{to}' not found", param="to")
 
     conv_id = find_or_create_direct_conversation(db, user_id, to, project)
+
+    # Determine approval_status for ai-to-ai responses
+    approval_status = None
+    if content_type == "ai-to-ai/response":
+        try:
+            parsed = json.loads(body)
+            if parsed.get("requires_human_approval"):
+                approval_status = "pending_human_approval"
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     result = insert_message(
         db, conv_id, user_id, body,
         subject=subject, content_type=content_type,
         idempotency_key=idempotency_key,
+        approval_status=approval_status,
     )
 
     if is_error(result):
         return result
+
+    # System message for ai-to-ai requests
+    if content_type == "ai-to-ai/request":
+        try:
+            parsed = json.loads(body)
+            tags = parsed.get("tags", [])
+            insert_system_message(
+                db, conv_id,
+                f"AI-to-AI request received from {user_id} [tags: {', '.join(tags)}]",
+            )
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     # Dead letter: check if recipient is offline
     offline = is_user_offline(db, to)

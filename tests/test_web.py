@@ -9,90 +9,20 @@ from starlette.testclient import TestClient
 from starlette.applications import Starlette
 
 from ai_mailbox.db.connection import SQLiteDB
+from ai_mailbox.db.schema import ensure_schema_sqlite
 from ai_mailbox.oauth import MailboxOAuthProvider, hash_password
 from ai_mailbox.web import create_web_routes
 
 JWT_SECRET = "test-secret-for-web-ui-minimum-32-bytes!!"
 
-# Schema from conftest -- duplicated here for the cross-thread SQLite fixture
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    api_key TEXT NOT NULL UNIQUE,
-    password_hash TEXT,
-    user_type TEXT NOT NULL DEFAULT 'human',
-    last_seen TIMESTAMP,
-    session_mode TEXT NOT NULL DEFAULT 'persistent',
-    email TEXT,
-    auth_provider TEXT NOT NULL DEFAULT 'local',
-    avatar_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL DEFAULT 'direct',
-    project TEXT,
-    name TEXT,
-    created_by TEXT NOT NULL REFERENCES users(id),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS conversation_participants (
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_read_sequence INTEGER NOT NULL DEFAULT 0,
-    archived_at TIMESTAMP,
-    PRIMARY KEY (conversation_id, user_id)
-);
-CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    from_user TEXT NOT NULL REFERENCES users(id),
-    sequence_number INTEGER NOT NULL,
-    subject TEXT,
-    body TEXT NOT NULL,
-    content_type TEXT NOT NULL DEFAULT 'text/plain',
-    idempotency_key TEXT,
-    reply_to TEXT REFERENCES messages(id),
-    ack_state TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (conversation_id, sequence_number)
-);
-CREATE TABLE IF NOT EXISTS oauth_clients (
-    client_id TEXT PRIMARY KEY, client_info TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS oauth_codes (
-    code TEXT PRIMARY KEY, client_id TEXT NOT NULL,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    code_challenge TEXT NOT NULL, redirect_uri TEXT NOT NULL,
-    scopes TEXT, expires_at REAL NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS oauth_tokens (
-    token TEXT PRIMARY KEY, client_id TEXT NOT NULL,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    scopes TEXT, expires_at INTEGER, refresh_token TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS user_invites (
-    email TEXT PRIMARY KEY,
-    invited_by TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    used_at TIMESTAMP
-);
-"""
-
 
 @pytest.fixture
 def web_db():
-    """Cross-thread-safe SQLite DB for web tests."""
+    """Cross-thread-safe SQLite DB for web tests via real migration path."""
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(_SCHEMA_SQL)
+    ensure_schema_sqlite(conn)
     conn.execute(
         "INSERT INTO users (id, display_name, api_key) VALUES (?, ?, ?)",
         ("keith", "Keith", "test-keith-key"),

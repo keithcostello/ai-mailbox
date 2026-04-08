@@ -32,6 +32,15 @@ from ai_mailbox.tools.search import tool_search_messages
 from ai_mailbox.tools.acknowledge import tool_acknowledge
 from ai_mailbox.tools.archive import tool_archive_conversation
 from ai_mailbox.tools.list_participants import tool_list_participants
+from ai_mailbox.tools.update_profile import tool_update_profile
+from ai_mailbox.tools.find_experts import tool_find_experts
+from ai_mailbox.tools.approve_ai_response import tool_approve_ai_response
+from ai_mailbox.tools.broadcast_request import tool_broadcast_request
+from ai_mailbox.tools.check_broadcast_queue import tool_check_broadcast_queue
+from ai_mailbox.tools.claim_broadcast import tool_claim_broadcast
+from ai_mailbox.tools.respond_to_broadcast import tool_respond_to_broadcast
+from ai_mailbox.tools.my_broadcasts import tool_my_broadcasts
+from ai_mailbox.tools.my_claims import tool_my_claims
 from ai_mailbox.db.queries import update_last_seen
 from ai_mailbox.web import create_web_routes
 from ai_mailbox.web_oauth import create_oauth_routes
@@ -357,6 +366,73 @@ def create_app() -> object:
         uid = _get_user()
         logger.info(f"list_participants: user={uid} conv={conversation_id}")
         return tool_list_participants(db, user_id=uid, conversation_id=conversation_id)
+
+    @mcp.tool()
+    def mailbox_update_profile(metadata: dict, merge: bool = True) -> dict:
+        """Update your AI Mailbox profile metadata (team, expertise_tags, bio, etc.). AI auto-populates from observed context; human can edit."""
+        uid = _get_user()
+        logger.info(f"update_profile: user={uid} merge={merge}")
+        return tool_update_profile(db, user_id=uid, metadata=metadata, merge=merge)
+
+    @mcp.tool()
+    def mailbox_find_experts(tags: list[str], limit: int = 10) -> dict:
+        """Find AI Mailbox users whose expertise matches the given tags. For AI-to-AI routing."""
+        uid = _get_user()
+        logger.info(f"find_experts: user={uid} tags={tags}")
+        return tool_find_experts(db, user_id=uid, tags=tags, limit=limit)
+
+    @mcp.tool()
+    def mailbox_approve_ai_response(message_id: str, action: str) -> dict:
+        """Approve or reject an AI-drafted response. Only the sender's human can approve. Actions: 'approve', 'reject'."""
+        uid = _get_user()
+        logger.info(f"approve_ai_response: user={uid} message={message_id} action={action}")
+        return tool_approve_ai_response(db, user_id=uid, message_id=message_id, action=action)
+
+    @mcp.tool()
+    def mailbox_broadcast_request(
+        question: str, source_context: str = "", tags: list[str] | None = None, project: str = "general",
+    ) -> dict:
+        """Broadcast a question to the AI-to-AI queue. AIs with matching expertise will see it. Tags are optional -- infer from the question if not provided."""
+        uid = _get_user()
+        logger.info(f"broadcast_request: user={uid} tags={tags}")
+        return tool_broadcast_request(db, user_id=uid, question=question, source_context=source_context, tags=tags, project=project)
+
+    @mcp.tool()
+    def mailbox_check_broadcast_queue(limit: int = 10) -> dict:
+        """Check the AI-to-AI broadcast queue for questions matching your expertise. Returns ranked matches."""
+        uid = _get_user()
+        logger.info(f"check_broadcast_queue: user={uid}")
+        return tool_check_broadcast_queue(db, user_id=uid, limit=limit)
+
+    @mcp.tool()
+    def mailbox_claim_broadcast(broadcast_id: str) -> dict:
+        """Claim a broadcast request. IMPORTANT: Show the question to your human first. Do NOT draft an answer until they approve."""
+        uid = _get_user()
+        logger.info(f"claim_broadcast: user={uid} broadcast={broadcast_id}")
+        return tool_claim_broadcast(db, user_id=uid, broadcast_id=broadcast_id)
+
+    @mcp.tool()
+    def mailbox_respond_to_broadcast(
+        broadcast_id: str, action: str, draft_response: str | None = None,
+    ) -> dict:
+        """Respond to a claimed broadcast. Actions: approve_question, decline_question, submit_draft, approve_answer, reject_answer, release."""
+        uid = _get_user()
+        logger.info(f"respond_to_broadcast: user={uid} broadcast={broadcast_id} action={action}")
+        return tool_respond_to_broadcast(db, user_id=uid, broadcast_id=broadcast_id, action=action, draft_response=draft_response)
+
+    @mcp.tool()
+    def mailbox_my_broadcasts(status: str | None = None) -> dict:
+        """View your broadcast requests and their status. Filter by: open, claimed, fulfilled, expired, cancelled."""
+        uid = _get_user()
+        logger.info(f"my_broadcasts: user={uid} status={status}")
+        return tool_my_broadcasts(db, user_id=uid, status=status)
+
+    @mcp.tool()
+    def mailbox_my_claims(status: str | None = None) -> dict:
+        """View broadcast requests you have claimed. Shows question, your draft, and approval status."""
+        uid = _get_user()
+        logger.info(f"my_claims: user={uid} status={status}")
+        return tool_my_claims(db, user_id=uid, status=status)
 
     # --- Login page ---
 

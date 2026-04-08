@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
+import json as _json
+
 from ai_mailbox.db.queries import get_all_users
 
 if TYPE_CHECKING:
@@ -38,12 +40,21 @@ def tool_list_users(
     for u in all_users:
         if u["id"] == user_id:
             continue
+        # Parse profile metadata for expertise_tags and bio
+        raw_meta = u.get("profile_metadata") or "{}"
+        try:
+            meta = _json.loads(raw_meta)
+        except (ValueError, TypeError):
+            meta = {}
+
         others.append({
             "id": u["id"],
             "display_name": u["display_name"],
             "user_type": u.get("user_type", "human"),
             "last_seen": u.get("last_seen"),
             "online": _is_online(u.get("last_seen")),
+            "expertise_tags": meta.get("expertise_tags", []),
+            "bio": meta.get("bio"),
         })
     return {
         "users": others,

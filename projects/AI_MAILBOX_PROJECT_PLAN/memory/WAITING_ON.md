@@ -1,22 +1,21 @@
 # AI_MAILBOX_PROJECT_PLAN
 
 **Status:** ACTIVE
-**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 7 complete, v0.7.0 in production
+**North Star:** Evolve AI Mailbox from POC to Alpha SaaS -- 8-sprint roadmap, Sprint 7 shipped, Sprint 8 next
 **Expected Branch:** mvp-1-staging
 **PR URL:**
 **Relevant Handoff:** docs/handoff/ai-mailbox/HANDOFF_AI-MAILBOX_2026-04-06_V3.md
 
 ## Next Steps
 
-- Keith: Production smoke test (steps 1, 5, 12 from UAT checklist)
 - Keith: Send Amy setup instructions for production MCP connector
-- Sprint 8 planning (email notifications, production hardening items)
-- Resolve TD-002 (Railway auto-deploy), TD-007 (Amy's MCP connector URL)
+- Keith: Decide email notification scope for Sprint 8
+- Sprint 8 planning (email notifications, TD-002, TD-007)
+- Sprint 8 spec document
 
 ## Pending Tasks
 
 - Email notifications [SPRINT-8, deferred from Sprint 7]
-- Production smoke test by Keith [BLOCKING full sign-off]
 - Amy onboarding to production MCP [WAITING ON Keith]
 - Railway auto-deploy from branch push not working [TD-002]
 - Resolve production dual-Postgres question (both at 0MB) [TD-003]
@@ -57,3 +56,5 @@
 - 2026-04-07: BUG-002 fixed (whoami Postgres HAVING alias). UAT process v1.1 (13 prompts).
 - 2026-04-07: Tier 3 Human UAT: 13/13 PASS. 589 tests total.
 - 2026-04-07: Merged mvp-1-staging to master. Deployed v0.7.0 to production. Health confirmed.
+- 2026-04-07: BUG-003 fixed (unread_only returning own messages). 591 tests. Deployed to production.
+- 2026-04-07: Production smoke test PASSED (Keith confirmed steps 1, 5, 12). Sprint 7 fully shipped.

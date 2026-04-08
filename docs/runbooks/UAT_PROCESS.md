@@ -147,6 +147,10 @@ Type these exact prompts in claude.ai with the staging MCP server connected. Run
 | 11 | `list all users` | Returns registered users (excludes system user) |
 | 12 | `who am I` | Returns identity with unread counts per project |
 | 13 | `list participants in the uat-test group` | Returns authoritative participant list with user_id, display_name, type |
+| 14 | `update my profile: I'm on the engineering team, expertise in python, mcp, and oauth` | Profile updated, returns profile_metadata |
+| 15 | `find experts for hr and onboarding` | Returns ranked list of users with matching expertise tags |
+| 16 | `send an ai-to-ai request to amy asking about benefits enrollment timeline` | Sends ai-to-ai/request, system message generated |
+| 17 | `approve the AI response for message [ID]` (or `reject`) | Approval status transitions, system message on reject |
 
 ### Checklist
 
@@ -176,9 +180,15 @@ Copy this checklist for each UAT run. Mark pass/fail per item.
 - [ ] PASS/FAIL -- Add participant: member added, system message generated
 
 ### Identity (Steps 11-13)
-- [ ] PASS/FAIL -- List users: returns registered users, excludes system
-- [ ] PASS/FAIL -- Whoami: returns identity with unread counts per project
+- [ ] PASS/FAIL -- List users: returns registered users with expertise_tags, excludes system
+- [ ] PASS/FAIL -- Whoami: returns identity with unread counts and profile_metadata
 - [ ] PASS/FAIL -- List participants: returns authoritative group membership
+
+### AI-to-AI (Steps 14-17)
+- [ ] PASS/FAIL -- Update profile: expertise tags stored, visible in whoami
+- [ ] PASS/FAIL -- Find experts: returns ranked matches by tag overlap
+- [ ] PASS/FAIL -- AI-to-AI request: structured JSON sent, system message generated
+- [ ] PASS/FAIL -- Approve/reject: approval status transitions, rejection system message
 
 ### Widget
 - [ ] PASS/FAIL -- Widget renders in claude.ai (not blank)
@@ -213,4 +223,5 @@ If any tier fails: fix, rerun failed tier, then re-gate.
 | Date | Test Count | Tier 1 | Tier 2 Cycle | Tier 3 |
 |------|------------|--------|--------------|--------|
 | 2026-04-06 | 550 | PASS | -- | PENDING |
-| 2026-04-07 | 589 | PASS | Cycle 1 (send + list_messages) | PASS (13/13 steps) |
+| 2026-04-07 | 591 | PASS | Cycle 1 (send + list_messages) | PASS (13/13 steps) |
+| 2026-04-07 | 591 | PASS | -- | PRODUCTION SMOKE TEST PASS |

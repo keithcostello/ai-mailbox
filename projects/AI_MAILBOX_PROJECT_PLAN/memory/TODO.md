@@ -33,3 +33,5 @@
 - Version bump to v0.7.0. Web health system user exclusion. (2026-04-07)
 - Tier 3 Human UAT: 13/13 PASS. 589 tests total. (2026-04-07)
 - Merged to master. Deployed v0.7.0 to production. (2026-04-07)
+- BUG-003 fixed: unread_only returning own sent messages. 591 tests. (2026-04-07)
+- BUG-003 merged to master and deployed to production. (2026-04-07)
