@@ -126,6 +126,32 @@ class TestListMessagesPagination:
         )
         assert result["message_count"] == 2
 
+    def test_cross_conversation_pagination_advances(self, db):
+        """BUG-004: after_sequence cursor was ignored in cross-conversation mode,
+        causing the same page to be returned on every call."""
+        conv1 = queries.find_or_create_direct_conversation(db, "keith", "amy", "general")
+        conv2 = queries.find_or_create_direct_conversation(db, "keith", "amy", "alerts")
+        for i in range(3):
+            queries.insert_message(db, conv1, "amy", f"general-{i}")
+        for i in range(3):
+            queries.insert_message(db, conv2, "amy", f"alert-{i}")
+
+        # Page 1: first 4 messages
+        r1 = tool_list_messages(db, user_id="keith", limit=4)
+        assert r1["message_count"] == 4
+        assert r1["has_more"] is True
+        assert r1["next_cursor"] == 4  # offset-based
+
+        # Page 2: remaining 2 messages using the cursor
+        r2 = tool_list_messages(db, user_id="keith", limit=4, after_sequence=r1["next_cursor"])
+        assert r2["message_count"] == 2
+        assert r2["has_more"] is False
+
+        # Pages should have different messages
+        page1_ids = {m["id"] for m in r1["messages"]}
+        page2_ids = {m["id"] for m in r2["messages"]}
+        assert page1_ids.isdisjoint(page2_ids), "Pages should not overlap"
+
     def test_invalid_limit(self, db):
         result = tool_list_messages(db, user_id="keith", limit=0)
         assert is_error(result)

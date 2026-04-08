@@ -59,9 +59,14 @@ def tool_list_messages(
     )
 
     # Compute next_cursor
+    # In single-conversation mode, cursor is sequence_number (per-conversation).
+    # In cross-conversation mode, cursor is offset (after_sequence + page size).
     next_cursor = None
     if has_more and msgs:
-        next_cursor = msgs[-1]["sequence_number"]
+        if conversation_id:
+            next_cursor = msgs[-1]["sequence_number"]
+        else:
+            next_cursor = after_sequence + len(msgs)
 
     # Truncate bodies to previews -- full content via get_thread
     previews = []
