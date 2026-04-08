@@ -480,7 +480,8 @@ def list_messages_query(
             tuple(params + [limit + 1]),
         )
     else:
-        # Cross-conversation mode
+        # Cross-conversation mode -- paginate by OFFSET since sequence_number
+        # is per-conversation and can't serve as a global cursor.
         conditions = ["cp.user_id = ?"]
         params = [user_id]
         if project:
@@ -497,8 +498,8 @@ def list_messages_query(
                 JOIN conversation_participants cp ON c.id = cp.conversation_id
                 WHERE {where}
                 ORDER BY m.created_at ASC
-                LIMIT ?""",
-            tuple(params + [limit + 1]),
+                LIMIT ? OFFSET ?""",
+            tuple(params + [limit + 1, after_sequence]),
         )
 
     has_more = len(rows) > limit
